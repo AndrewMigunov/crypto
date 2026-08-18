@@ -1,0 +1,5 @@
+set(CMAKE_C_COMPILER gcc CACHE FILEPATH "C compiler" FORCE)
+set(CMAKE_AR ar CACHE FILEPATH "Archiver" FORCE)
+set(CMAKE_RANLIB ranlib CACHE FILEPATH "Archive indexer" FORCE)
+set(CMAKE_C_COMPILER_AR ar CACHE FILEPATH "Compiler archiver" FORCE)
+set(CMAKE_C_COMPILER_RANLIB ranlib CACHE FILEPATH "Compiler archive indexer" FORCE)

@@ -1,0 +1,17 @@
+{
+  "name": "crypto-c99",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspace/crypto",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/crypto,type=bind",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools"
+      ]
+    }
+  }
+}
