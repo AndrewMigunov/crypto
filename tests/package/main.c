@@ -1,4 +1,5 @@
 #include <des.h>
+#include <version.h>
 
 #include <string.h>
 
@@ -16,7 +17,9 @@ int main(void)
 
     status = crypto_des_encrypt(key, sizeof(key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, plaintext,
                                 sizeof(plaintext), output, sizeof(output));
-    if ((status == CRYPTO_STATUS_OK) && (memcmp(output, expected, sizeof(output)) == 0))
+    if ((status == CRYPTO_STATUS_OK) && (memcmp(output, expected, sizeof(output)) == 0) &&
+        (strcmp(crypto_version(), CRYPTOMOON_VERSION) == 0) &&
+        (strcmp(crypto_full_version(), CRYPTOMOON_FULL_VERSION) == 0))
     {
         result = 0;
     }

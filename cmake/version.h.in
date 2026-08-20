@@ -1,0 +1,41 @@
+#ifndef CRYPTO_VERSION_H
+#define CRYPTO_VERSION_H
+
+/**
+ * @file version.h
+ * @brief Build-time cryptomoon version information.
+ */
+
+#include <export.h>
+
+/** @brief Project version configured by CMake. */
+#define CRYPTOMOON_VERSION "@PROJECT_VERSION@"
+
+/** @brief Major component of the project version. */
+#define CRYPTOMOON_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+
+/** @brief Minor component of the project version. */
+#define CRYPTOMOON_VERSION_MINOR @PROJECT_VERSION_MINOR@
+
+/** @brief Patch component of the project version. */
+#define CRYPTOMOON_VERSION_PATCH @PROJECT_VERSION_PATCH@
+
+/** @brief Short Git commit hash captured during CMake configuration. */
+#define CRYPTOMOON_GIT_COMMIT_SHORT "@CRYPTOMOON_GIT_COMMIT_SHORT@"
+
+/** @brief Project version combined with the short Git commit hash. */
+#define CRYPTOMOON_FULL_VERSION CRYPTOMOON_VERSION "+" CRYPTOMOON_GIT_COMMIT_SHORT
+
+/**
+ * @brief Return the project version.
+ * @return Pointer to a static string in the form `major.minor.patch`.
+ */
+CRYPTO_API const char *crypto_version(void);
+
+/**
+ * @brief Return the project version and short Git commit hash.
+ * @return Pointer to a static string in the form `major.minor.patch+commit`.
+ */
+CRYPTO_API const char *crypto_full_version(void);
+
+#endif

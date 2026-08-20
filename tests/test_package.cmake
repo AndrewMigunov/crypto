@@ -21,6 +21,7 @@ execute_process(
         "-DCMAKE_BUILD_TYPE=${CRYPTOMOON_PACKAGE_BUILD_TYPE}"
         "-DCMAKE_C_COMPILER=${CRYPTOMOON_C_COMPILER}"
         "-DCMAKE_PREFIX_PATH=${install_directory}"
+        "-DCRYPTOMOON_REQUIRED_VERSION=${CRYPTOMOON_PACKAGE_VERSION}"
     RESULT_VARIABLE configure_result
     ERROR_VARIABLE configure_error
 )

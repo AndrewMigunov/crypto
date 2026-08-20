@@ -561,4 +561,7 @@ static int cli_run(int argc, char *argv[])
 }
 
 /** @brief Program entry point. */
-int main(int argc, char *argv[]) { return cli_run(argc, argv); }
+int main(int argc, char *argv[])
+{
+    return cli_run(argc, argv);
+}

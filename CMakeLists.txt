@@ -1,15 +1,25 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(cryptomoon VERSION 0.1.0 LANGUAGES C)
+project(cryptomoon VERSION 0.0.1 LANGUAGES C)
 
 include(GNUInstallDirs)
 include(CTest)
 include(CMakePackageConfigHelpers)
 include(cmake/modules/CompilerWarnings.cmake)
+include(cmake/modules/GitVersion.cmake)
 
 option(CRYPTOMOON_BUILD_TESTS "Build the cryptomoon test suite" ${BUILD_TESTING})
 option(CRYPTOMOON_BUILD_CLI "Build the cryptomoon command-line application" ON)
 option(CRYPTOMOON_ENABLE_COVERAGE "Enable GCC coverage instrumentation" OFF)
+
+cryptomoon_get_git_commit_short(CRYPTOMOON_GIT_COMMIT_SHORT "${CMAKE_CURRENT_SOURCE_DIR}")
+
+set(CRYPTOMOON_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+configure_file(
+    cmake/version.h.in
+    ${CRYPTOMOON_GENERATED_INCLUDE_DIR}/version.h
+    @ONLY
+)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     find_package(Doxygen REQUIRED COMPONENTS dot)
@@ -24,6 +34,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(DOXYGEN_USE_MDFILE_AS_MAINPAGE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
     doxygen_add_docs(cryptomoon_docs
         include
+        ${CRYPTOMOON_GENERATED_INCLUDE_DIR}/version.h
         src
         README.md
         ALL
@@ -35,6 +46,7 @@ add_library(cryptomoon_objects OBJECT
     src/des.c
     src/status.c
     src/tdes.c
+    src/version.c
 )
 set_target_properties(cryptomoon_objects PROPERTIES
     C_EXTENSIONS OFF
@@ -45,6 +57,7 @@ set_target_properties(cryptomoon_objects PROPERTIES
 )
 target_include_directories(cryptomoon_objects
     PUBLIC
+        $<BUILD_INTERFACE:${CRYPTOMOON_GENERATED_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
@@ -66,6 +79,7 @@ foreach(target IN ITEMS cryptomoon_static cryptomoon_shared)
     target_compile_features(${target} PUBLIC c_std_99)
     target_include_directories(${target}
         PUBLIC
+            $<BUILD_INTERFACE:${CRYPTOMOON_GENERATED_INCLUDE_DIR}>
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
@@ -101,6 +115,9 @@ install(TARGETS cryptomoon_static cryptomoon_shared
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES ${CRYPTOMOON_GENERATED_INCLUDE_DIR}/version.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 install(EXPORT cryptomoonTargets
     FILE cryptomoonTargets.cmake
     NAMESPACE cryptomoon::

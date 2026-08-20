@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 project(cryptomoon_package_consumer LANGUAGES C)
 
-find_package(cryptomoon 0.1 REQUIRED CONFIG)
+find_package(cryptomoon ${CRYPTOMOON_REQUIRED_VERSION} REQUIRED CONFIG)
 
 foreach(linkage IN ITEMS static shared)
     add_executable(cryptomoon_package_consumer_${linkage} main.c)

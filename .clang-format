@@ -1,5 +1,6 @@
 BasedOnStyle: LLVM
 BreakBeforeBraces: Allman
+AllowShortFunctionsOnASingleLine: None
 ColumnLimit: 100
 IndentWidth: 4
 UseTab: Never

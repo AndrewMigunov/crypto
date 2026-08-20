@@ -56,6 +56,10 @@ The public headers are under `include/`. ECB is the only currently supported cip
 each call processes any number of complete blocks without padding. Input lengths must be
 multiples of the 8-byte DES block size. See the unit tests for complete examples.
 
+The generated `version.h` header exposes the CMake project version, the short Git commit hash,
+and their combined `CRYPTOMOON_FULL_VERSION` value. The allocation-free `crypto_version()`
+function returns `major.minor.patch`, while `crypto_full_version()` appends the Git hash.
+
 ## Command-line application
 
 The `cryptomoon-cli` executable encrypts and decrypts DES, 2TDES, and 3TDES data through the public

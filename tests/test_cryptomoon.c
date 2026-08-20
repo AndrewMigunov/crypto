@@ -3,6 +3,7 @@
 #include <des.h>
 #include <status.h>
 #include <tdes.h>
+#include <version.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -376,10 +377,21 @@ static void test_status_strings(void)
     return;
 }
 
+/** @brief Verify the generated version constants and public version functions. */
+static void test_version(void)
+{
+    TEST_CHECK(strcmp(crypto_version(), CRYPTOMOON_VERSION) == 0);
+    TEST_CHECK(strcmp(crypto_full_version(), CRYPTOMOON_FULL_VERSION) == 0);
+    TEST_CHECK(strcmp(CRYPTOMOON_VERSION, "0.0.1") == 0);
+    TEST_CHECK(strlen(CRYPTOMOON_GIT_COMMIT_SHORT) > 0U);
+    return;
+}
+
 TEST_LIST = {{"vectors/known-answer", test_known_answer_vectors},
              {"ecb/multiple-blocks", test_multiple_blocks},
              {"keys/parity-ignored", test_parity_ignored},
              {"keys/validation", test_key_validation},
              {"api/contract", test_public_contract},
              {"status/strings", test_status_strings},
+             {"version/generated", test_version},
              {NULL, NULL}};
