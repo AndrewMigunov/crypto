@@ -11,6 +11,15 @@ endif()
 
 add_test(NAME cryptomoon.unit COMMAND cryptomoon_tests)
 
+add_test(NAME cryptomoon.version-refresh
+    COMMAND ${CMAKE_COMMAND}
+        -DCRYPTOMOON_GENERATOR=${CMAKE_GENERATOR}
+        -DCRYPTOMOON_GIT_VERSION_MODULE=${PROJECT_SOURCE_DIR}/cmake/modules/GitVersion.cmake
+        -DCRYPTOMOON_VERSION_FIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/version
+        -DCRYPTOMOON_VERSION_TEST_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/version-test
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_version_refresh.cmake
+)
+
 if(NOT CRYPTOMOON_ENABLE_COVERAGE)
     add_executable(cryptomoon_tests_shared test_cryptomoon.c)
     target_link_libraries(cryptomoon_tests_shared PRIVATE cryptomoon_shared)
@@ -44,6 +53,12 @@ if(TARGET cryptomoon_cli)
     add_test(NAME cryptomoon.cli.help COMMAND cryptomoon_cli --help)
     set_tests_properties(cryptomoon.cli.help PROPERTIES
         PASS_REGULAR_EXPRESSION "Usage:"
+    )
+
+    add_test(NAME cryptomoon.cli.version COMMAND cryptomoon_cli --version)
+    set_tests_properties(cryptomoon.cli.version PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "cryptomoon-cli ${PROJECT_VERSION}\\+${CRYPTOMOON_GIT_COMMIT_SHORT}"
     )
 
     add_test(NAME cryptomoon.cli.des.encrypt

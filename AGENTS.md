@@ -122,6 +122,14 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Mark breaking changes with `!` before the colon and explain them in a `BREAKING CHANGE:` footer.
 - Keep each commit focused on one logical change.
 
+## Versioning and releases
+
+- Follow Semantic Versioning using the `MAJOR.MINOR.PATCH` form.
+- Keep the top-level CMake `project()` version as the only project-version source.
+- Use annotated release tags in the `vMAJOR.MINOR.PATCH` form.
+- Create release tags only from a clean working tree and on the exact release commit.
+- Treat the Git hash in the full build version as build identification, not package compatibility.
+
 ## Dev-container requirement
 
 - Perform every configure, build, test, coverage, documentation, and installation verification

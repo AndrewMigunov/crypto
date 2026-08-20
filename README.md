@@ -86,6 +86,21 @@ Run `cryptomoon-cli --help` for the complete syntax. As with the library itself,
 is only for education and legacy interoperability; DES, TDES, and ECB are unsuitable for new
 secure systems.
 
+Run `cryptomoon-cli --version` to print the project version together with the short Git commit
+hash used for the build.
+
+## Versioning and releases
+
+The project follows Semantic Versioning. Update the version only in the top-level `project()`
+command; library artifacts, generated headers, documentation, package metadata, and tests derive
+their versions from that value. Increment `MAJOR` for incompatible API or ABI changes, `MINOR` for
+backward-compatible features, and `PATCH` for backward-compatible fixes.
+
+Release tags use the annotated `vMAJOR.MINOR.PATCH` form and must point to the commit used for the
+release build. The working tree must be clean before creating a release tag. The Git hash appended
+by `crypto_full_version()` identifies the exact build commit but does not change package-version
+compatibility.
+
 ## Installation
 
 ```sh

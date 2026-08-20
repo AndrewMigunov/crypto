@@ -1,6 +1,7 @@
 #include <des.h>
 #include <status.h>
 #include <tdes.h>
+#include <version.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -63,6 +64,8 @@ static void cli_print_usage(FILE *stream)
 {
     (void)fprintf(stream,
                   "Usage:\n"
+                  "  cryptomoon-cli --help\n"
+                  "  cryptomoon-cli --version\n"
                   "  cryptomoon-cli <encrypt|decrypt> --algorithm <des|2tdes|3tdes>\n"
                   "      (--key <hex> | --key-file <path>)\n"
                   "      (--input <hex> | --file <path>) [--output <path>]\n"
@@ -74,6 +77,18 @@ static void cli_print_usage(FILE *stream)
                   "Warning: DES, TDES, and ECB are obsolete and are provided only for\n"
                   "education and legacy interoperability.\n");
     return;
+}
+
+/** @brief Print the complete build version. */
+static int cli_print_version(void)
+{
+    int result = CLI_EXIT_OK;
+
+    if (printf("cryptomoon-cli %s\n", crypto_full_version()) < 0)
+    {
+        result = CLI_EXIT_IO;
+    }
+    return result;
 }
 
 /** @brief Parse the operation name. */
@@ -544,6 +559,10 @@ static int cli_run(int argc, char *argv[])
     {
         cli_print_usage(stdout);
         result = CLI_EXIT_OK;
+    }
+    else if ((argc == 2) && (strcmp(argv[1], "--version") == 0))
+    {
+        result = cli_print_version();
     }
     else
     {

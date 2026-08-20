@@ -382,7 +382,6 @@ static void test_version(void)
 {
     TEST_CHECK(strcmp(crypto_version(), CRYPTOMOON_VERSION) == 0);
     TEST_CHECK(strcmp(crypto_full_version(), CRYPTOMOON_FULL_VERSION) == 0);
-    TEST_CHECK(strcmp(CRYPTOMOON_VERSION, "0.0.1") == 0);
     TEST_CHECK(strlen(CRYPTOMOON_GIT_COMMIT_SHORT) > 0U);
     return;
 }
