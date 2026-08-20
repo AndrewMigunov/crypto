@@ -3,88 +3,55 @@
 
 /**
  * @file des.h
- * @brief Public API for the DES block cipher.
+ * @brief Public one-shot API for the DES block cipher.
  */
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
+#include <crypto/cipher.h>
 #include <crypto/export.h>
 #include <crypto/status.h>
 
-#define CRYPTO_DES_BLOCK_SIZE 8U   /**< DES block size in bytes. */
-#define CRYPTO_DES_KEY_SIZE 8U     /**< Encoded DES key size including parity bits. */
-#define CRYPTO_DES_ROUND_COUNT 16U /**< Number of DES Feistel rounds. */
-
-/** @brief Caller-owned DES key schedule. */
-typedef struct crypto_des_context
-{
-    /** Expanded 48-bit round keys stored in the low bits of each element. */
-    uint64_t round_keys[CRYPTO_DES_ROUND_COUNT];
-    /** Internal marker used to reject uninitialized or cleared contexts. */
-    uint32_t initialized;
-} crypto_des_context;
+#define CRYPTO_DES_BLOCK_SIZE 8U /**< DES block size in bytes. */
+#define CRYPTO_DES_KEY_SIZE 8U   /**< Encoded DES key size including parity bits. */
 
 /**
- * @brief Validate odd parity without modifying a DES key.
- * @param key Pointer to the key bytes.
+ * @brief Encrypt complete DES blocks without retaining a public key context.
+ * @param key Pointer to the encoded DES key.
  * @param key_length Key length; must equal CRYPTO_DES_KEY_SIZE.
+ * @param mode Cipher mode; currently only CRYPTO_CIPHER_MODE_ECB is supported.
+ * @param iv Initialization vector; ignored when @p iv_length is zero for ECB.
+ * @param iv_length Initialization-vector length; must be zero for ECB.
+ * @param input Pointer to the input blocks.
+ * @param input_length Input length; must be a multiple of CRYPTO_DES_BLOCK_SIZE.
+ * @param output Pointer to the output blocks; it must not overlap @p input.
+ * @param output_length Output length; must equal @p input_length.
  * @return CRYPTO_STATUS_OK on success or a validation error.
  */
-CRYPTO_API crypto_status crypto_des_key_check_parity(
-    const uint8_t *key, size_t key_length);
+CRYPTO_API crypto_status crypto_des_encrypt(const uint8_t *key, size_t key_length,
+                                            crypto_cipher_mode mode, const uint8_t *iv,
+                                            size_t iv_length, const uint8_t *input,
+                                            size_t input_length, uint8_t *output,
+                                            size_t output_length);
+
 /**
- * @brief Set the low bit of every DES key byte to obtain odd parity.
- * @param key Pointer to the mutable key bytes.
+ * @brief Decrypt complete DES blocks without retaining a public key context.
+ * @param key Pointer to the encoded DES key.
  * @param key_length Key length; must equal CRYPTO_DES_KEY_SIZE.
- * @return CRYPTO_STATUS_OK on success or an argument error.
- */
-CRYPTO_API crypto_status crypto_des_key_set_odd_parity(uint8_t *key, size_t key_length);
-/**
- * @brief Validate DES key length, parity, and weak-key properties.
- * @param key Pointer to the key bytes.
- * @param key_length Key length; must equal CRYPTO_DES_KEY_SIZE.
+ * @param mode Cipher mode; currently only CRYPTO_CIPHER_MODE_ECB is supported.
+ * @param iv Initialization vector; ignored when @p iv_length is zero for ECB.
+ * @param iv_length Initialization-vector length; must be zero for ECB.
+ * @param input Pointer to the input blocks.
+ * @param input_length Input length; must be a multiple of CRYPTO_DES_BLOCK_SIZE.
+ * @param output Pointer to the output blocks; it must not overlap @p input.
+ * @param output_length Output length; must equal @p input_length.
  * @return CRYPTO_STATUS_OK on success or a validation error.
  */
-CRYPTO_API crypto_status crypto_des_key_validate(const uint8_t *key, size_t key_length);
-/**
- * @brief Validate and expand a DES key into a caller-owned context.
- * @param context Context to initialize.
- * @param key Pointer to the key bytes.
- * @param key_length Key length; must equal CRYPTO_DES_KEY_SIZE.
- * @return CRYPTO_STATUS_OK on success or an initialization error.
- */
-CRYPTO_API crypto_status crypto_des_init(
-    crypto_des_context *context,
-    const uint8_t *key,
-    size_t key_length);
-/**
- * @brief Encrypt exactly one DES block.
- * @param context Initialized DES context.
- * @param input Input block. It must not overlap @p output.
- * @param output Output block.
- * @return CRYPTO_STATUS_OK on success or an argument/context error.
- */
-CRYPTO_API crypto_status crypto_des_encrypt_block(
-    const crypto_des_context *context,
-    const uint8_t input[CRYPTO_DES_BLOCK_SIZE],
-    uint8_t output[CRYPTO_DES_BLOCK_SIZE]);
-/**
- * @brief Decrypt exactly one DES block.
- * @param context Initialized DES context.
- * @param input Input block. It must not overlap @p output.
- * @param output Output block.
- * @return CRYPTO_STATUS_OK on success or an argument/context error.
- */
-CRYPTO_API crypto_status crypto_des_decrypt_block(
-    const crypto_des_context *context,
-    const uint8_t input[CRYPTO_DES_BLOCK_SIZE],
-    uint8_t output[CRYPTO_DES_BLOCK_SIZE]);
-/**
- * @brief Erase derived key material and invalidate a DES context.
- * @param context Context to erase.
- * @return CRYPTO_STATUS_OK on success or CRYPTO_STATUS_NULL_ARGUMENT.
- */
-CRYPTO_API crypto_status crypto_des_clear(crypto_des_context *context);
+CRYPTO_API crypto_status crypto_des_decrypt(const uint8_t *key, size_t key_length,
+                                            crypto_cipher_mode mode, const uint8_t *iv,
+                                            size_t iv_length, const uint8_t *input,
+                                            size_t input_length, uint8_t *output,
+                                            size_t output_length);
 
 #endif

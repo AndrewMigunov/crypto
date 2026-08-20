@@ -1,0 +1,15 @@
+#ifndef CRYPTO_CIPHER_H
+#define CRYPTO_CIPHER_H
+
+/**
+ * @file cipher.h
+ * @brief Shared block-cipher mode definitions.
+ */
+
+/** @brief Supported block-cipher modes. */
+typedef enum crypto_cipher_mode
+{
+    CRYPTO_CIPHER_MODE_ECB = 0 /**< Electronic Codebook mode. */
+} crypto_cipher_mode;
+
+#endif

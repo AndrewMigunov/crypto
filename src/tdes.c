@@ -1,12 +1,13 @@
 #include <crypto/tdes.h>
 
 #include <stddef.h>
+#include <stdint.h>
 
-#define CRYPTO_TDES_CONTEXT_MAGIC UINT32_C(0x54444553)
+#include "des_internal.h"
 
+/** @brief Securely erase bounded sensitive storage. */
 static void crypto_tdes_secure_zero(void *memory, size_t size)
 {
-    /** Keep context erasure observable to the compiler. */
     volatile uint8_t *bytes = (volatile uint8_t *)memory;
     size_t index;
 
@@ -14,8 +15,10 @@ static void crypto_tdes_secure_zero(void *memory, size_t size)
     {
         bytes[index] = UINT8_C(0);
     }
+    return;
 }
 
+/** @brief Compare effective DES keys while ignoring parity bits. */
 static int crypto_tdes_effective_keys_equal(const uint8_t first[CRYPTO_DES_KEY_SIZE],
                                             const uint8_t second[CRYPTO_DES_KEY_SIZE])
 {
@@ -23,189 +26,178 @@ static int crypto_tdes_effective_keys_equal(const uint8_t first[CRYPTO_DES_KEY_S
     size_t index;
     int result;
 
-    /** Parity bits do not contribute to the effective 56-bit DES key. */
     for (index = 0U; index < CRYPTO_DES_KEY_SIZE; ++index)
     {
-        difference = (uint8_t)(difference
-                               | (uint8_t)((first[index] ^ second[index]) & UINT8_C(0xfe)));
+        difference =
+            (uint8_t)(difference | (uint8_t)((first[index] ^ second[index]) & UINT8_C(0xfe)));
     }
     result = (difference == UINT8_C(0)) ? 1 : 0;
     return result;
 }
 
-crypto_status crypto_tdes2_init(crypto_tdes_context *context,
-                                const uint8_t *key, size_t key_length)
+/** @brief Determine whether two bounded byte ranges overlap. */
+static int crypto_tdes_buffers_overlap(const uint8_t *input, size_t input_length,
+                                       const uint8_t *output, size_t output_length)
 {
-    crypto_status status = CRYPTO_STATUS_OK;
+    uintptr_t input_address;
+    uintptr_t output_address;
+    int result;
 
-    if ((context == NULL) || (key == NULL))
+    input_address = (uintptr_t)input;
+    output_address = (uintptr_t)output;
+    if (input_address <= output_address)
     {
-        status = CRYPTO_STATUS_NULL_ARGUMENT;
+        result = ((output_address - input_address) < input_length) ? 1 : 0;
     }
     else
     {
-        crypto_tdes_secure_zero(context, sizeof(*context));
-        if (key_length != CRYPTO_TDES2_KEY_SIZE)
-        {
-            status = CRYPTO_STATUS_INVALID_LENGTH;
-        }
-        else if (crypto_tdes_effective_keys_equal(key, key + CRYPTO_DES_KEY_SIZE) != 0)
-        {
-            status = CRYPTO_STATUS_DEGENERATE_KEY;
-        }
-        else
-        {
-            status = crypto_des_init(&context->keys[0], key, CRYPTO_DES_KEY_SIZE);
-            if (status == CRYPTO_STATUS_OK)
-            {
-                status = crypto_des_init(&context->keys[1], key + CRYPTO_DES_KEY_SIZE,
-                                         CRYPTO_DES_KEY_SIZE);
-            }
-            if (status == CRYPTO_STATUS_OK)
-            {
-                /** Two-key TDES is the EDE sequence K1, K2, K1. */
-                context->keys[2] = context->keys[0];
-                context->initialized = CRYPTO_TDES_CONTEXT_MAGIC;
-            }
-            else
-            {
-                crypto_tdes_secure_zero(context, sizeof(*context));
-            }
-        }
+        result = ((input_address - output_address) < output_length) ? 1 : 0;
+    }
+    return result;
+}
+
+/** @brief Validate TDES component distinctness for the selected keying option. */
+static crypto_status crypto_tdes_validate_distinct_keys(const uint8_t *key, size_t key_length)
+{
+    crypto_status status = CRYPTO_STATUS_OK;
+
+    if (crypto_tdes_effective_keys_equal(key, key + CRYPTO_DES_KEY_SIZE) != 0)
+    {
+        status = CRYPTO_STATUS_DEGENERATE_KEY;
+    }
+    else if ((key_length == CRYPTO_TDES3_KEY_SIZE) &&
+             ((crypto_tdes_effective_keys_equal(key, key + (2U * CRYPTO_DES_KEY_SIZE)) != 0) ||
+              (crypto_tdes_effective_keys_equal(key + CRYPTO_DES_KEY_SIZE,
+                                                key + (2U * CRYPTO_DES_KEY_SIZE)) != 0)))
+    {
+        status = CRYPTO_STATUS_DEGENERATE_KEY;
     }
     return status;
 }
 
-crypto_status crypto_tdes3_init(crypto_tdes_context *context,
-                                const uint8_t *key, size_t key_length)
+/** @brief Expand the TDES key components into private schedules. */
+static crypto_status crypto_tdes_make_schedules(crypto_des_schedule schedules[3],
+                                                const uint8_t *key, size_t key_length)
 {
     crypto_status status = CRYPTO_STATUS_OK;
-    size_t key_index;
+    size_t component_count;
+    size_t component_index;
 
-    if ((context == NULL) || (key == NULL))
+    component_count = (key_length == CRYPTO_TDES2_KEY_SIZE) ? 2U : 3U;
+    for (component_index = 0U; component_index < component_count; ++component_index)
     {
-        status = CRYPTO_STATUS_NULL_ARGUMENT;
+        if (status == CRYPTO_STATUS_OK)
+        {
+            status = crypto_des_schedule_init(&schedules[component_index],
+                                              key + (component_index * CRYPTO_DES_KEY_SIZE),
+                                              CRYPTO_DES_KEY_SIZE);
+        }
     }
-    else
+    if ((status == CRYPTO_STATUS_OK) && (component_count == 2U))
     {
-        crypto_tdes_secure_zero(context, sizeof(*context));
-        if (key_length != CRYPTO_TDES3_KEY_SIZE)
-        {
-            status = CRYPTO_STATUS_INVALID_LENGTH;
-        }
-        else if ((crypto_tdes_effective_keys_equal(key, key + CRYPTO_DES_KEY_SIZE) != 0)
-            || (crypto_tdes_effective_keys_equal(key, key + (2U * CRYPTO_DES_KEY_SIZE)) != 0)
-            || (crypto_tdes_effective_keys_equal(key + CRYPTO_DES_KEY_SIZE,
-                                                  key + (2U * CRYPTO_DES_KEY_SIZE)) != 0))
-        {
-            status = CRYPTO_STATUS_DEGENERATE_KEY;
-        }
-        else
-        {
-            for (key_index = 0U; key_index < 3U; ++key_index)
-            {
-                if (status == CRYPTO_STATUS_OK)
-                {
-                    status = crypto_des_init(&context->keys[key_index],
-                                             key + (key_index * CRYPTO_DES_KEY_SIZE),
-                                             CRYPTO_DES_KEY_SIZE);
-                }
-            }
-            if (status == CRYPTO_STATUS_OK)
-            {
-                context->initialized = CRYPTO_TDES_CONTEXT_MAGIC;
-            }
-            else
-            {
-                crypto_tdes_secure_zero(context, sizeof(*context));
-            }
-        }
+        schedules[2] = schedules[0];
     }
     return status;
 }
 
-static crypto_status crypto_tdes_process_block(const crypto_tdes_context *context,
-                                               const uint8_t input[CRYPTO_DES_BLOCK_SIZE],
-                                               uint8_t output[CRYPTO_DES_BLOCK_SIZE], int decrypt)
+/** @brief Apply the TDES EDE sequence in the selected direction. */
+static void crypto_tdes_transform(const crypto_des_schedule schedules[3],
+                                  const uint8_t input[CRYPTO_DES_BLOCK_SIZE],
+                                  uint8_t output[CRYPTO_DES_BLOCK_SIZE], int decrypt)
 {
-    crypto_status status = CRYPTO_STATUS_OK;
     uint8_t first[CRYPTO_DES_BLOCK_SIZE];
     uint8_t second[CRYPTO_DES_BLOCK_SIZE];
 
-    if ((context == NULL) || (input == NULL) || (output == NULL))
+    if (decrypt == 0)
     {
-        status = CRYPTO_STATUS_NULL_ARGUMENT;
-    }
-    else if (input == output)
-    {
-        status = CRYPTO_STATUS_OVERLAPPING_BUFFERS;
-    }
-    else if (context->initialized != CRYPTO_TDES_CONTEXT_MAGIC)
-    {
-        status = CRYPTO_STATUS_INVALID_CONTEXT;
-    }
-    else if (decrypt == 0)
-    {
-        /** TDES encryption applies E(K1), D(K2), E(K3). */
-        status = crypto_des_encrypt_block(&context->keys[0], input, first);
-        if (status == CRYPTO_STATUS_OK)
-        {
-            status = crypto_des_decrypt_block(&context->keys[1], first, second);
-        }
-        if (status == CRYPTO_STATUS_OK)
-        {
-            status = crypto_des_encrypt_block(&context->keys[2], second, output);
-        }
+        crypto_des_schedule_encrypt(&schedules[0], input, first);
+        crypto_des_schedule_decrypt(&schedules[1], first, second);
+        crypto_des_schedule_encrypt(&schedules[2], second, output);
     }
     else
     {
-        /** Reverse both the operation and key order for decryption. */
-        status = crypto_des_decrypt_block(&context->keys[2], input, first);
-        if (status == CRYPTO_STATUS_OK)
-        {
-            status = crypto_des_encrypt_block(&context->keys[1], first, second);
-        }
-        if (status == CRYPTO_STATUS_OK)
-        {
-            status = crypto_des_decrypt_block(&context->keys[0], second, output);
-        }
+        crypto_des_schedule_decrypt(&schedules[2], input, first);
+        crypto_des_schedule_encrypt(&schedules[1], first, second);
+        crypto_des_schedule_decrypt(&schedules[0], second, output);
     }
     crypto_tdes_secure_zero(first, sizeof(first));
     crypto_tdes_secure_zero(second, sizeof(second));
-    return status;
+    return;
 }
 
-crypto_status crypto_tdes_encrypt_block(const crypto_tdes_context *context,
-                                        const uint8_t input[CRYPTO_DES_BLOCK_SIZE],
-                                        uint8_t output[CRYPTO_DES_BLOCK_SIZE])
-{
-    crypto_status status;
-
-    status = crypto_tdes_process_block(context, input, output, 0);
-    return status;
-}
-
-crypto_status crypto_tdes_decrypt_block(const crypto_tdes_context *context,
-                                        const uint8_t input[CRYPTO_DES_BLOCK_SIZE],
-                                        uint8_t output[CRYPTO_DES_BLOCK_SIZE])
-{
-    crypto_status status;
-
-    status = crypto_tdes_process_block(context, input, output, 1);
-    return status;
-}
-
-crypto_status crypto_tdes_clear(crypto_tdes_context *context)
+/** @brief Validate arguments and perform a one-shot TDES operation. */
+static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
+                                       crypto_cipher_mode mode, const uint8_t *iv, size_t iv_length,
+                                       const uint8_t *input, size_t input_length, uint8_t *output,
+                                       size_t output_length, int decrypt)
 {
     crypto_status status = CRYPTO_STATUS_OK;
+    crypto_des_schedule schedules[3];
+    size_t block_offset;
+    size_t schedule_index;
 
-    if (context == NULL)
+    for (schedule_index = 0U; schedule_index < 3U; ++schedule_index)
+    {
+        crypto_des_schedule_clear(&schedules[schedule_index]);
+    }
+    if ((key == NULL) || (input == NULL) || (output == NULL))
     {
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
+    else if (mode != CRYPTO_CIPHER_MODE_ECB)
+    {
+        status = CRYPTO_STATUS_INVALID_MODE;
+    }
+    else if ((iv_length != 0U) || ((input_length % CRYPTO_DES_BLOCK_SIZE) != 0U) ||
+             (output_length != input_length))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if ((key_length != CRYPTO_TDES2_KEY_SIZE) && (key_length != CRYPTO_TDES3_KEY_SIZE))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if (crypto_tdes_buffers_overlap(input, input_length, output, output_length) != 0)
+    {
+        status = CRYPTO_STATUS_OVERLAPPING_BUFFERS;
+    }
     else
     {
-        crypto_tdes_secure_zero(context, sizeof(*context));
+        status = crypto_tdes_validate_distinct_keys(key, key_length);
+        if (status == CRYPTO_STATUS_OK)
+        {
+            status = crypto_tdes_make_schedules(schedules, key, key_length);
+        }
+        if (status == CRYPTO_STATUS_OK)
+        {
+            for (block_offset = 0U; block_offset < input_length;
+                 block_offset += CRYPTO_DES_BLOCK_SIZE)
+            {
+                crypto_tdes_transform(schedules, input + block_offset, output + block_offset,
+                                      decrypt);
+            }
+        }
+    }
+    (void)iv;
+    for (schedule_index = 0U; schedule_index < 3U; ++schedule_index)
+    {
+        crypto_des_schedule_clear(&schedules[schedule_index]);
     }
     return status;
+}
+
+crypto_status crypto_tdes_encrypt(const uint8_t *key, size_t key_length, crypto_cipher_mode mode,
+                                  const uint8_t *iv, size_t iv_length, const uint8_t *input,
+                                  size_t input_length, uint8_t *output, size_t output_length)
+{
+    return crypto_tdes_crypt(key, key_length, mode, iv, iv_length, input, input_length, output,
+                             output_length, 0);
+}
+
+crypto_status crypto_tdes_decrypt(const uint8_t *key, size_t key_length, crypto_cipher_mode mode,
+                                  const uint8_t *iv, size_t iv_length, const uint8_t *input,
+                                  size_t input_length, uint8_t *output, size_t output_length)
+{
+    return crypto_tdes_crypt(key, key_length, mode, iv, iv_length, input, input_length, output,
+                             output_length, 1);
 }

@@ -25,26 +25,35 @@ Replace `debug` with `release` for an optimized build. To collect coverage:
 cmake --preset coverage
 cmake --build --preset coverage
 ctest --preset coverage
-lcov --capture --directory build/coverage --output-file build/coverage/coverage.info
+lcov --capture --directory build/coverage --output-file build/coverage/coverage-all.info
+lcov --extract build/coverage/coverage-all.info '*/src/*' \
+    --output-file build/coverage/coverage.info
 ```
 
 All project warnings are errors. GCC is configured for strict ISO C99 without GNU language
 extensions.
 
+Unit tests use a pinned, vendored copy of the header-only Acutest framework. Configuring and
+building the project never downloads test dependencies.
+
 ## API rules
 
-- All contexts and buffers are supplied by the caller; the library never allocates heap memory.
+- All input and output buffers are supplied by the caller; the library never allocates heap
+  memory.
 - DES operates on an 8-byte key and an 8-byte block.
 - 2TDES accepts 16 bytes (`K1, K2`) and applies `K1, K2, K1`.
 - 3TDES accepts 24 bytes (`K1, K2, K3`) with three distinct effective keys.
-- Key bytes use odd DES parity. Helper functions can validate or explicitly correct parity.
+- Key bytes must already use odd DES parity; the library validates but never modifies them.
 - Weak, semi-weak, potentially weak, and degenerate keys are rejected.
 - Input and output buffers must be distinct and must not overlap.
 - Bytes are interpreted in the bit order defined by the DES specification, independently of host
   endianness.
-- Initialized contexts must be cleared with `crypto_des_clear()` or `crypto_tdes_clear()`.
+- DES and TDES operations are one-shot calls. Key schedules remain private and are erased before
+  each call returns.
 
-The public headers are under `include/crypto/`. See the unit tests for complete examples.
+The public headers are under `include/crypto/`. ECB is the only currently supported cipher mode,
+and each call processes any number of complete blocks without padding. Input lengths must be
+multiples of the 8-byte DES block size. See the unit tests for complete examples.
 
 ## Installation
 
@@ -65,3 +74,6 @@ reference; its implementation was not copied.
 ## License
 
 Apache License 2.0. See `LICENSE`.
+
+The test-only Acutest header is available under the MIT license preserved in
+`tests/third_party/acutest/LICENSE.md`.

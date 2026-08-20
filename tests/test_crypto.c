@@ -1,302 +1,348 @@
+#include <acutest.h>
+
 #include <crypto/des.h>
 #include <crypto/status.h>
 #include <crypto/tdes.h>
 
-#include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
-static int expect_status(const char *name, crypto_status actual, crypto_status expected)
-{
-    int failed = 0;
+/** @brief Signature shared by all public one-shot cipher operations. */
+typedef crypto_status (*cipher_operation)(const uint8_t *key, size_t key_length,
+                                          crypto_cipher_mode mode, const uint8_t *iv,
+                                          size_t iv_length, const uint8_t *input,
+                                          size_t input_length, uint8_t *output,
+                                          size_t output_length);
 
-    if (actual != expected)
-    {
-        (void)fprintf(stderr, "%s: expected %s, got %s\n", name,
-                      crypto_status_string(expected), crypto_status_string(actual));
-        failed = 1;
-    }
-    return failed;
+/** @brief Known-answer vector for a one-shot block cipher. */
+typedef struct cipher_vector
+{
+    const char *name;          /**< Name shown by the test runner. */
+    cipher_operation encrypt;  /**< Encryption operation. */
+    cipher_operation decrypt;  /**< Decryption operation. */
+    const uint8_t *key;        /**< Encoded key. */
+    size_t key_length;         /**< Encoded key length. */
+    const uint8_t *plaintext;  /**< Expected plaintext block. */
+    const uint8_t *ciphertext; /**< Expected ciphertext block. */
+} cipher_vector;
+
+/** @brief Expected result for a key-validation call. */
+typedef struct key_validation_case
+{
+    const char *name;           /**< Name shown by the test runner. */
+    cipher_operation operation; /**< Operation used to validate the key. */
+    const uint8_t *key;         /**< Encoded key under test. */
+    size_t key_length;          /**< Encoded key length. */
+    crypto_status expected;     /**< Expected validation status. */
+} key_validation_case;
+
+/** @brief Fully specified public operation used for table-driven contract tests. */
+typedef struct contract_case
+{
+    const char *name;           /**< Name shown by the test runner. */
+    cipher_operation operation; /**< Public operation under test. */
+    const uint8_t *key;         /**< Key argument. */
+    size_t key_length;          /**< Key-length argument. */
+    crypto_cipher_mode mode;    /**< Mode argument. */
+    const uint8_t *iv;          /**< Initialization-vector argument. */
+    size_t iv_length;           /**< Initialization-vector length. */
+    const uint8_t *input;       /**< Input argument. */
+    size_t input_length;        /**< Input-length argument. */
+    uint8_t *output;            /**< Output argument. */
+    size_t output_length;       /**< Output-length argument. */
+    crypto_status expected;     /**< Expected operation status. */
+} contract_case;
+
+/** @brief Canonical DES key with valid odd parity. */
+static const uint8_t des_key[CRYPTO_DES_KEY_SIZE] = {0x13, 0x34, 0x57, 0x79,
+                                                     0x9b, 0xbc, 0xdf, 0xf1};
+
+/** @brief Canonical DES plaintext block. */
+static const uint8_t des_plaintext[CRYPTO_DES_BLOCK_SIZE] = {0x01, 0x23, 0x45, 0x67,
+                                                             0x89, 0xab, 0xcd, 0xef};
+
+/** @brief Canonical DES ciphertext block. */
+static const uint8_t des_ciphertext[CRYPTO_DES_BLOCK_SIZE] = {0x85, 0xe8, 0x13, 0x54,
+                                                              0x0f, 0x0a, 0xb4, 0x05};
+
+/** @brief Published two-key TDES key. */
+static const uint8_t tdes2_key[CRYPTO_TDES2_KEY_SIZE] = {
+    0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01};
+
+/** @brief Published three-key TDES key. */
+static const uint8_t tdes3_key[CRYPTO_TDES3_KEY_SIZE] = {
+    0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x23, 0x45, 0x67, 0x89,
+    0xab, 0xcd, 0xef, 0x01, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23};
+
+/** @brief Published TDES plaintext block. */
+static const uint8_t tdes_plaintext[CRYPTO_DES_BLOCK_SIZE] = {0xfe, 0xdc, 0xba, 0x98,
+                                                              0x76, 0x54, 0x32, 0x10};
+
+/** @brief Published two-key TDES ciphertext block. */
+static const uint8_t tdes2_ciphertext[CRYPTO_DES_BLOCK_SIZE] = {0xb0, 0x8c, 0xca, 0xef,
+                                                                0xcf, 0x22, 0x58, 0x60};
+
+/** @brief Published three-key TDES ciphertext block. */
+static const uint8_t tdes3_ciphertext[CRYPTO_DES_BLOCK_SIZE] = {0x07, 0x37, 0xf6, 0xc5,
+                                                                0x37, 0x50, 0xd4, 0xa4};
+
+/** @brief Block used when only validation behavior matters. */
+static const uint8_t zero_block[CRYPTO_DES_BLOCK_SIZE] = {0};
+
+/** @brief Report a status comparison with readable status strings. */
+static void check_status(crypto_status actual, crypto_status expected)
+{
+    TEST_CHECK_(actual == expected, "expected %s, got %s", crypto_status_string(expected),
+                crypto_status_string(actual));
+    return;
 }
 
-static int expect_block(const char *name, const uint8_t actual[CRYPTO_DES_BLOCK_SIZE],
+/** @brief Compare cipher blocks and dump both values on failure. */
+static void check_block(const uint8_t actual[CRYPTO_DES_BLOCK_SIZE],
                         const uint8_t expected[CRYPTO_DES_BLOCK_SIZE])
 {
-    int failed = 0;
-
-    if (memcmp(actual, expected, CRYPTO_DES_BLOCK_SIZE) != 0)
-    {
-        (void)fprintf(stderr, "%s: block mismatch\n", name);
-        failed = 1;
-    }
-    return failed;
+    TEST_CHECK(memcmp(actual, expected, CRYPTO_DES_BLOCK_SIZE) == 0);
+    TEST_DUMP("Expected:", expected, CRYPTO_DES_BLOCK_SIZE);
+    TEST_DUMP("Actual:", actual, CRYPTO_DES_BLOCK_SIZE);
+    return;
 }
 
-static int test_des_known_vector(void)
+/** @brief Exercise DES, two-key TDES, and three-key TDES known-answer vectors. */
+static void test_known_answer_vectors(void)
 {
-    /** Canonical FIPS DES known-answer test. */
-    static const uint8_t key[CRYPTO_DES_KEY_SIZE] =
-        {0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1};
-    static const uint8_t plaintext[CRYPTO_DES_BLOCK_SIZE] =
-        {0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
-    static const uint8_t expected[CRYPTO_DES_BLOCK_SIZE] =
-        {0x85, 0xe8, 0x13, 0x54, 0x0f, 0x0a, 0xb4, 0x05};
-    crypto_des_context context;
-    uint8_t encrypted[CRYPTO_DES_BLOCK_SIZE];
-    uint8_t decrypted[CRYPTO_DES_BLOCK_SIZE];
+    static const cipher_vector vectors[] = {
+        {"DES", crypto_des_encrypt, crypto_des_decrypt, des_key, sizeof(des_key), des_plaintext,
+         des_ciphertext},
+        {"2TDES", crypto_tdes_encrypt, crypto_tdes_decrypt, tdes2_key, sizeof(tdes2_key),
+         tdes_plaintext, tdes2_ciphertext},
+        {"3TDES", crypto_tdes_encrypt, crypto_tdes_decrypt, tdes3_key, sizeof(tdes3_key),
+         tdes_plaintext, tdes3_ciphertext}};
+    uint8_t encrypted[CRYPTO_DES_BLOCK_SIZE] = {0};
+    uint8_t decrypted[CRYPTO_DES_BLOCK_SIZE] = {0};
     crypto_status status;
-    int failed = 0;
+    const cipher_vector *vector;
+    size_t index;
 
-    status = crypto_des_init(&context, key, sizeof(key));
-    failed |= expect_status("DES init", status, CRYPTO_STATUS_OK);
-    if (status == CRYPTO_STATUS_OK)
+    for (index = 0U; index < (sizeof(vectors) / sizeof(vectors[0])); ++index)
     {
-        status = crypto_des_encrypt_block(&context, plaintext, encrypted);
-        failed |= expect_status("DES encrypt", status, CRYPTO_STATUS_OK);
-        failed |= expect_block("DES ciphertext", encrypted, expected);
-        status = crypto_des_decrypt_block(&context, encrypted, decrypted);
-        failed |= expect_status("DES decrypt", status, CRYPTO_STATUS_OK);
-        failed |= expect_block("DES plaintext", decrypted, plaintext);
+        vector = &vectors[index];
+        TEST_CASE(vector->name);
+        status =
+            vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                            vector->plaintext, CRYPTO_DES_BLOCK_SIZE, encrypted, sizeof(encrypted));
+        check_status(status, CRYPTO_STATUS_OK);
+        check_block(encrypted, vector->ciphertext);
+        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                                 encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
+        check_status(status, CRYPTO_STATUS_OK);
+        check_block(decrypted, vector->plaintext);
     }
-    failed |= expect_status("DES clear", crypto_des_clear(&context), CRYPTO_STATUS_OK);
-    failed |= expect_status("DES use after clear",
-                            crypto_des_encrypt_block(&context, plaintext, encrypted),
-                            CRYPTO_STATUS_INVALID_CONTEXT);
-    return failed;
+    return;
 }
 
-static int test_des_key_validation(void)
+/** @brief Exercise multi-block ECB encryption and decryption. */
+static void test_multiple_blocks(void)
 {
-    uint8_t bad_parity[CRYPTO_DES_KEY_SIZE] =
-        {0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0};
-    static const uint8_t weak_key[CRYPTO_DES_KEY_SIZE] =
-        {0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01};
-    crypto_des_context context;
-    int failed = 0;
-
-    failed |= expect_status("bad parity", crypto_des_key_validate(bad_parity, sizeof(bad_parity)),
-                            CRYPTO_STATUS_INVALID_KEY_PARITY);
-    failed |= expect_status("set parity",
-                            crypto_des_key_set_odd_parity(bad_parity, sizeof(bad_parity)),
-                            CRYPTO_STATUS_OK);
-    failed |= expect_status("corrected parity",
-                            crypto_des_key_check_parity(bad_parity, sizeof(bad_parity)),
-                            CRYPTO_STATUS_OK);
-    failed |= expect_status("weak key", crypto_des_key_validate(weak_key, sizeof(weak_key)),
-                            CRYPTO_STATUS_WEAK_KEY);
-    failed |= expect_status("null key", crypto_des_key_validate(NULL, 0U),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    failed |= expect_status("null parity output", crypto_des_key_set_odd_parity(NULL, 0U),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    failed |= expect_status("null context", crypto_des_init(NULL, weak_key, sizeof(weak_key)),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    failed |= expect_status("short DES key",
-                            crypto_des_key_validate(weak_key, sizeof(weak_key) - 1U),
-                            CRYPTO_STATUS_INVALID_LENGTH);
-    failed |= expect_status("short DES parity output",
-                            crypto_des_key_set_odd_parity(bad_parity,
-                                                          sizeof(bad_parity) - 1U),
-                            CRYPTO_STATUS_INVALID_LENGTH);
-    failed |= expect_status("clear null", crypto_des_clear(NULL),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    (void)memset(&context, 0, sizeof(context));
-    failed |= expect_status("invalid context",
-                            crypto_des_encrypt_block(&context, weak_key, bad_parity),
-                            CRYPTO_STATUS_INVALID_CONTEXT);
-    return failed;
-}
-
-static int test_des_buffer_contract(void)
-{
-    static const uint8_t key[CRYPTO_DES_KEY_SIZE] =
-        {0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1};
-    crypto_des_context context;
-    uint8_t block[CRYPTO_DES_BLOCK_SIZE] = {0};
-    int failed = 0;
-
-    failed |= expect_status("buffer init", crypto_des_init(&context, key, sizeof(key)),
-                            CRYPTO_STATUS_OK);
-    failed |= expect_status("same buffer", crypto_des_encrypt_block(&context, block, block),
-                            CRYPTO_STATUS_OVERLAPPING_BUFFERS);
-    failed |= expect_status("null input", crypto_des_encrypt_block(&context, NULL, block),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    failed |= expect_status("null output", crypto_des_encrypt_block(&context, block, NULL),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    failed |= expect_status("buffer clear", crypto_des_clear(&context), CRYPTO_STATUS_OK);
-    return failed;
-}
-
-static int test_tdes_three_key_vector(void)
-{
-    /** Published three-key TDES EDE known-answer test. */
-    static const uint8_t key[CRYPTO_TDES3_KEY_SIZE] = {
-        0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef,
-        0x23,0x45,0x67,0x89,0xab,0xcd,0xef,0x01,
-        0x45,0x67,0x89,0xab,0xcd,0xef,0x01,0x23
-    };
-    static const uint8_t plaintext[CRYPTO_DES_BLOCK_SIZE] =
-        {0xfe,0xdc,0xba,0x98,0x76,0x54,0x32,0x10};
-    static const uint8_t expected[CRYPTO_DES_BLOCK_SIZE] =
-        {0x07,0x37,0xf6,0xc5,0x37,0x50,0xd4,0xa4};
-    crypto_tdes_context context;
-    uint8_t encrypted[CRYPTO_DES_BLOCK_SIZE];
-    uint8_t decrypted[CRYPTO_DES_BLOCK_SIZE];
+    static const cipher_vector vectors[] = {
+        {"DES", crypto_des_encrypt, crypto_des_decrypt, des_key, sizeof(des_key), des_plaintext,
+         des_ciphertext},
+        {"2TDES", crypto_tdes_encrypt, crypto_tdes_decrypt, tdes2_key, sizeof(tdes2_key),
+         tdes_plaintext, tdes2_ciphertext},
+        {"3TDES", crypto_tdes_encrypt, crypto_tdes_decrypt, tdes3_key, sizeof(tdes3_key),
+         tdes_plaintext, tdes3_ciphertext}};
+    uint8_t plaintext[2U * CRYPTO_DES_BLOCK_SIZE];
+    uint8_t expected[2U * CRYPTO_DES_BLOCK_SIZE];
+    uint8_t encrypted[2U * CRYPTO_DES_BLOCK_SIZE] = {0};
+    uint8_t decrypted[2U * CRYPTO_DES_BLOCK_SIZE] = {0};
+    const cipher_vector *vector;
     crypto_status status;
-    int failed = 0;
+    size_t index;
 
-    status = crypto_tdes3_init(&context, key, sizeof(key));
-    failed |= expect_status("3TDES init", status, CRYPTO_STATUS_OK);
-    if (status == CRYPTO_STATUS_OK)
+    for (index = 0U; index < (sizeof(vectors) / sizeof(vectors[0])); ++index)
     {
-        status = crypto_tdes_encrypt_block(&context, plaintext, encrypted);
-        failed |= expect_status("3TDES encrypt", status, CRYPTO_STATUS_OK);
-        failed |= expect_block("3TDES ciphertext", encrypted, expected);
-        status = crypto_tdes_decrypt_block(&context, encrypted, decrypted);
-        failed |= expect_status("3TDES decrypt", status, CRYPTO_STATUS_OK);
-        failed |= expect_block("3TDES plaintext", decrypted, plaintext);
+        vector = &vectors[index];
+        TEST_CASE(vector->name);
+        memcpy(plaintext, vector->plaintext, CRYPTO_DES_BLOCK_SIZE);
+        memcpy(plaintext + CRYPTO_DES_BLOCK_SIZE, vector->plaintext, CRYPTO_DES_BLOCK_SIZE);
+        memcpy(expected, vector->ciphertext, CRYPTO_DES_BLOCK_SIZE);
+        memcpy(expected + CRYPTO_DES_BLOCK_SIZE, vector->ciphertext, CRYPTO_DES_BLOCK_SIZE);
+        status = vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                                 plaintext, sizeof(plaintext), encrypted, sizeof(encrypted));
+        check_status(status, CRYPTO_STATUS_OK);
+        TEST_CHECK(memcmp(encrypted, expected, sizeof(expected)) == 0);
+        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                                 encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
+        check_status(status, CRYPTO_STATUS_OK);
+        TEST_CHECK(memcmp(decrypted, plaintext, sizeof(plaintext)) == 0);
     }
-    failed |= expect_status("3TDES clear", crypto_tdes_clear(&context), CRYPTO_STATUS_OK);
-    return failed;
+    return;
 }
 
-static int test_tdes_two_key_round_trip(void)
+/** @brief Exercise parity, weak-key, and TDES degeneracy rejection. */
+static void test_key_validation(void)
 {
-    /** Published two-key TDES EDE known-answer test. */
-    static const uint8_t key[CRYPTO_TDES2_KEY_SIZE] = {
-        0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef,
-        0x23,0x45,0x67,0x89,0xab,0xcd,0xef,0x01
-    };
-    static const uint8_t plaintext[CRYPTO_DES_BLOCK_SIZE] =
-        {0xfe,0xdc,0xba,0x98,0x76,0x54,0x32,0x10};
-    static const uint8_t expected[CRYPTO_DES_BLOCK_SIZE] =
-        {0xb0,0x8c,0xca,0xef,0xcf,0x22,0x58,0x60};
-    crypto_tdes_context context;
-    uint8_t encrypted[CRYPTO_DES_BLOCK_SIZE];
-    uint8_t decrypted[CRYPTO_DES_BLOCK_SIZE];
-    crypto_status status;
-    int failed = 0;
-
-    status = crypto_tdes2_init(&context, key, sizeof(key));
-    failed |= expect_status("2TDES init", status, CRYPTO_STATUS_OK);
-    if (status == CRYPTO_STATUS_OK)
-    {
-        status = crypto_tdes_encrypt_block(&context, plaintext, encrypted);
-        failed |= expect_status("2TDES encrypt", status, CRYPTO_STATUS_OK);
-        failed |= expect_block("2TDES ciphertext", encrypted, expected);
-        status = crypto_tdes_decrypt_block(&context, encrypted, decrypted);
-        failed |= expect_status("2TDES decrypt", status, CRYPTO_STATUS_OK);
-        failed |= expect_block("2TDES plaintext", decrypted, plaintext);
-    }
-    failed |= expect_status("2TDES clear", crypto_tdes_clear(&context), CRYPTO_STATUS_OK);
-    failed |= expect_status("2TDES use after clear",
-                            crypto_tdes_encrypt_block(&context, plaintext, encrypted),
-                            CRYPTO_STATUS_INVALID_CONTEXT);
-    return failed;
-}
-
-static int test_tdes_validation(void)
-{
-    static const uint8_t repeated_key[CRYPTO_TDES2_KEY_SIZE] = {
-        0x13,0x34,0x57,0x79,0x9b,0xbc,0xdf,0xf1,
-        0x13,0x34,0x57,0x79,0x9b,0xbc,0xdf,0xf1
-    };
-    static const uint8_t repeated_key3[CRYPTO_TDES3_KEY_SIZE] = {
-        0x13,0x34,0x57,0x79,0x9b,0xbc,0xdf,0xf1,
-        0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef,
-        0x13,0x34,0x57,0x79,0x9b,0xbc,0xdf,0xf1
-    };
-    static const uint8_t bad_parity_key[CRYPTO_TDES2_KEY_SIZE] = {
-        0x12,0x34,0x56,0x78,0x9a,0xbc,0xde,0xf0,
-        0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef
-    };
-    static const uint8_t weak_component[CRYPTO_TDES2_KEY_SIZE] = {
-        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
-        0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef
-    };
-    static const uint8_t weak_component3[CRYPTO_TDES3_KEY_SIZE] = {
-        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
-        0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef,
-        0x45,0x67,0x89,0xab,0xcd,0xef,0x01,0x23
-    };
-    crypto_tdes_context context;
-    uint8_t block[CRYPTO_DES_BLOCK_SIZE] = {0};
+    static const uint8_t bad_parity[CRYPTO_DES_KEY_SIZE] = {0x12, 0x34, 0x56, 0x78,
+                                                            0x9a, 0xbc, 0xde, 0xf0};
+    static const uint8_t weak_key[CRYPTO_DES_KEY_SIZE] = {0x01, 0x01, 0x01, 0x01,
+                                                          0x01, 0x01, 0x01, 0x01};
+    static const uint8_t repeated_key[CRYPTO_TDES2_KEY_SIZE] = {0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc,
+                                                                0xdf, 0xf1, 0x13, 0x34, 0x57, 0x79,
+                                                                0x9b, 0xbc, 0xdf, 0xf1};
+    static const uint8_t repeated_first_key3[CRYPTO_TDES3_KEY_SIZE] = {
+        0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1, 0x01, 0x23, 0x45, 0x67,
+        0x89, 0xab, 0xcd, 0xef, 0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1};
+    static const uint8_t repeated_last_key3[CRYPTO_TDES3_KEY_SIZE] = {
+        0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1, 0x01, 0x23, 0x45, 0x67,
+        0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
+    static const uint8_t bad_tdes_parity[CRYPTO_TDES2_KEY_SIZE] = {
+        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
+    static const uint8_t weak_tdes_component[CRYPTO_TDES3_KEY_SIZE] = {
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x23, 0x45, 0x67,
+        0x89, 0xab, 0xcd, 0xef, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23};
+    static const key_validation_case cases[] = {
+        {"DES/invalid-parity", crypto_des_encrypt, bad_parity, sizeof(bad_parity),
+         CRYPTO_STATUS_INVALID_KEY_PARITY},
+        {"DES/weak-key", crypto_des_encrypt, weak_key, sizeof(weak_key), CRYPTO_STATUS_WEAK_KEY},
+        {"2TDES/repeated-key", crypto_tdes_encrypt, repeated_key, sizeof(repeated_key),
+         CRYPTO_STATUS_DEGENERATE_KEY},
+        {"3TDES/first-equals-third", crypto_tdes_encrypt, repeated_first_key3,
+         sizeof(repeated_first_key3), CRYPTO_STATUS_DEGENERATE_KEY},
+        {"3TDES/second-equals-third", crypto_tdes_encrypt, repeated_last_key3,
+         sizeof(repeated_last_key3), CRYPTO_STATUS_DEGENERATE_KEY},
+        {"2TDES/invalid-parity", crypto_tdes_encrypt, bad_tdes_parity, sizeof(bad_tdes_parity),
+         CRYPTO_STATUS_INVALID_KEY_PARITY},
+        {"3TDES/weak-component", crypto_tdes_encrypt, weak_tdes_component,
+         sizeof(weak_tdes_component), CRYPTO_STATUS_WEAK_KEY}};
     uint8_t output[CRYPTO_DES_BLOCK_SIZE] = {0};
-    int failed = 0;
+    const key_validation_case *test_case;
+    crypto_status status;
+    size_t index;
 
-    failed |= expect_status("degenerate 2TDES",
-                            crypto_tdes2_init(&context, repeated_key, sizeof(repeated_key)),
-                            CRYPTO_STATUS_DEGENERATE_KEY);
-    failed |= expect_status("degenerate 3TDES",
-                            crypto_tdes3_init(&context, repeated_key3, sizeof(repeated_key3)),
-                            CRYPTO_STATUS_DEGENERATE_KEY);
-    failed |= expect_status("bad TDES parity",
-                            crypto_tdes2_init(&context, bad_parity_key, sizeof(bad_parity_key)),
-                            CRYPTO_STATUS_INVALID_KEY_PARITY);
-    failed |= expect_status("weak TDES component",
-                            crypto_tdes2_init(&context, weak_component, sizeof(weak_component)),
-                            CRYPTO_STATUS_WEAK_KEY);
-    failed |= expect_status("weak 3TDES component",
-                            crypto_tdes3_init(&context, weak_component3, sizeof(weak_component3)),
-                            CRYPTO_STATUS_WEAK_KEY);
-    failed |= expect_status("null TDES",
-                            crypto_tdes2_init(NULL, repeated_key, sizeof(repeated_key)),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    failed |= expect_status("null 3TDES key", crypto_tdes3_init(&context, NULL, 0U),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    failed |= expect_status("short 2TDES key",
-                            crypto_tdes2_init(&context, repeated_key, sizeof(repeated_key) - 1U),
-                            CRYPTO_STATUS_INVALID_LENGTH);
-    failed |= expect_status("short 3TDES key",
-                            crypto_tdes3_init(&context, repeated_key3, sizeof(repeated_key3) - 1U),
-                            CRYPTO_STATUS_INVALID_LENGTH);
-    (void)memset(&context, 0, sizeof(context));
-    failed |= expect_status("invalid TDES context",
-                            crypto_tdes_encrypt_block(&context, block, output),
-                            CRYPTO_STATUS_INVALID_CONTEXT);
-    failed |= expect_status("same TDES buffer",
-                            crypto_tdes_encrypt_block(&context, block, block),
-                            CRYPTO_STATUS_OVERLAPPING_BUFFERS);
-    failed |= expect_status("null TDES input",
-                            crypto_tdes_encrypt_block(&context, NULL, output),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    failed |= expect_status("clear null TDES", crypto_tdes_clear(NULL),
-                            CRYPTO_STATUS_NULL_ARGUMENT);
-    return failed;
+    for (index = 0U; index < (sizeof(cases) / sizeof(cases[0])); ++index)
+    {
+        test_case = &cases[index];
+        TEST_CASE(test_case->name);
+        status =
+            test_case->operation(test_case->key, test_case->key_length, CRYPTO_CIPHER_MODE_ECB,
+                                 NULL, 0U, zero_block, sizeof(zero_block), output, sizeof(output));
+        check_status(status, test_case->expected);
+    }
+    return;
 }
 
-static int test_status_strings(void)
+/** @brief Exercise every public argument-validation branch for DES and TDES. */
+static void test_public_contract(void)
 {
-    int failed = 0;
+    uint8_t storage[(2U * CRYPTO_DES_BLOCK_SIZE) + 1U] = {0};
+    uint8_t output[2U * CRYPTO_DES_BLOCK_SIZE] = {0};
+    const contract_case cases[] = {
+        {"DES/null-key", crypto_des_encrypt, NULL, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB, NULL,
+         0U, storage, CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE,
+         CRYPTO_STATUS_NULL_ARGUMENT},
+        {"DES/null-input", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB,
+         NULL, 0U, NULL, CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE,
+         CRYPTO_STATUS_NULL_ARGUMENT},
+        {"DES/null-output", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB,
+         NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, NULL, CRYPTO_DES_BLOCK_SIZE,
+         CRYPTO_STATUS_NULL_ARGUMENT},
+        {"DES/invalid-mode", crypto_des_encrypt, des_key, sizeof(des_key), (crypto_cipher_mode)99,
+         NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE,
+         CRYPTO_STATUS_INVALID_MODE},
+        {"DES/invalid-iv-length", crypto_des_encrypt, des_key, sizeof(des_key),
+         CRYPTO_CIPHER_MODE_ECB, storage, 1U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+        {"DES/invalid-input-length", crypto_des_encrypt, des_key, sizeof(des_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE - 1U, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+        {"DES/invalid-output-length", crypto_des_encrypt, des_key, sizeof(des_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         (2U * CRYPTO_DES_BLOCK_SIZE), CRYPTO_STATUS_INVALID_LENGTH},
+        {"DES/invalid-key-length", crypto_des_encrypt, des_key, sizeof(des_key) - 1U,
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+        {"DES/empty-input", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB,
+         NULL, 0U, storage, 0U, output, 0U, CRYPTO_STATUS_OK},
+        {"DES/same-buffer", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB,
+         NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
+         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+        {"DES/forward-overlap", crypto_des_encrypt, des_key, sizeof(des_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, storage + 1U,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+        {"DES/reverse-overlap", crypto_des_encrypt, des_key, sizeof(des_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage + 1U, CRYPTO_DES_BLOCK_SIZE, storage,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+        {"TDES/null-key", crypto_tdes_encrypt, NULL, sizeof(tdes2_key), CRYPTO_CIPHER_MODE_ECB,
+         NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE,
+         CRYPTO_STATUS_NULL_ARGUMENT},
+        {"TDES/null-input", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
+        {"TDES/null-output", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, NULL,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
+        {"TDES/invalid-mode", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         (crypto_cipher_mode)99, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_MODE},
+        {"TDES/invalid-iv-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, storage, 1U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+        {"TDES/invalid-input-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE - 1U, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+        {"TDES/invalid-output-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         (2U * CRYPTO_DES_BLOCK_SIZE), CRYPTO_STATUS_INVALID_LENGTH},
+        {"TDES/invalid-key-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key) - 1U,
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+        {"TDES/empty-input", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, 0U, output, 0U, CRYPTO_STATUS_OK},
+        {"TDES/same-buffer", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, storage,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+        {"TDES/forward-overlap", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, storage + 1U,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+        {"TDES/reverse-overlap", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+         CRYPTO_CIPHER_MODE_ECB, NULL, 0U, storage + 1U, CRYPTO_DES_BLOCK_SIZE, storage,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS}};
+    const contract_case *test_case;
+    crypto_status status;
+    size_t index;
+
+    for (index = 0U; index < (sizeof(cases) / sizeof(cases[0])); ++index)
+    {
+        test_case = &cases[index];
+        TEST_CASE(test_case->name);
+        status = test_case->operation(test_case->key, test_case->key_length, test_case->mode,
+                                      test_case->iv, test_case->iv_length, test_case->input,
+                                      test_case->input_length, test_case->output,
+                                      test_case->output_length);
+        check_status(status, test_case->expected);
+    }
+    return;
+}
+
+/** @brief Verify that every published status has a stable description. */
+static void test_status_strings(void)
+{
     int value;
 
-    for (value = (int)CRYPTO_STATUS_OK;
-         value <= (int)CRYPTO_STATUS_INVALID_LENGTH; ++value)
+    for (value = (int)CRYPTO_STATUS_OK; value <= (int)CRYPTO_STATUS_INVALID_MODE; ++value)
     {
-        if (strcmp(crypto_status_string((crypto_status)value), "unknown status") == 0)
-        {
-            failed = 1;
-        }
+        TEST_CASE(crypto_status_string((crypto_status)value));
+        TEST_CHECK(strcmp(crypto_status_string((crypto_status)value), "unknown status") != 0);
     }
-    if (strcmp(crypto_status_string((crypto_status)999), "unknown status") != 0)
-    {
-        failed = 1;
-    }
-    return failed;
+    TEST_CASE("out-of-range");
+    TEST_CHECK(strcmp(crypto_status_string((crypto_status)999), "unknown status") == 0);
+    return;
 }
 
-int main(void)
-{
-    int failed = 0;
-
-    failed |= test_des_known_vector();
-    failed |= test_des_key_validation();
-    failed |= test_des_buffer_contract();
-    failed |= test_tdes_three_key_vector();
-    failed |= test_tdes_two_key_round_trip();
-    failed |= test_tdes_validation();
-    failed |= test_status_strings();
-    if (failed == 0)
-    {
-        (void)puts("All crypto tests passed.");
-    }
-    return failed;
-}
+TEST_LIST = {{"vectors/known-answer", test_known_answer_vectors},
+             {"ecb/multiple-blocks", test_multiple_blocks},
+             {"keys/validation", test_key_validation},
+             {"api/contract", test_public_contract},
+             {"status/strings", test_status_strings},
+             {NULL, NULL}};

@@ -17,8 +17,9 @@ typedef enum crypto_status
     CRYPTO_STATUS_WEAK_KEY,            /**< The key produces too few round keys. */
     CRYPTO_STATUS_DEGENERATE_KEY,      /**< TDES collapses to a lower keying option. */
     CRYPTO_STATUS_INVALID_CONTEXT,     /**< The context is not initialized. */
-    CRYPTO_STATUS_OVERLAPPING_BUFFERS, /**< Input and output buffers are identical. */
-    CRYPTO_STATUS_INVALID_LENGTH       /**< A buffer has an unexpected size. */
+    CRYPTO_STATUS_OVERLAPPING_BUFFERS, /**< Input and output buffer ranges overlap. */
+    CRYPTO_STATUS_INVALID_LENGTH,      /**< A buffer has an unexpected size. */
+    CRYPTO_STATUS_INVALID_MODE         /**< The selected cipher mode is unsupported. */
 } crypto_status;
 
 /**
