@@ -7,7 +7,7 @@ This repository contains the `crypto` C99 library. The first implementation stag
 - DES block encryption and decryption;
 - two-key Triple DES (2TDES) using K1, K2, K1;
 - three-key Triple DES (3TDES) using K1, K2, K3;
-- single-block operations only;
+- ECB operations over any number of complete blocks;
 - no block modes and no padding.
 
 DES and TDES are obsolete algorithms. Treat this project as an educational and legacy
@@ -20,8 +20,12 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Use the Allman brace style defined by `.clang-format`.
 - Every C function must contain exactly one `return` statement, including static helpers and
   test functions.
+- Return a single call expression directly instead of introducing a variable used only by that
+  return statement.
 - Write code comments in English.
 - All code comments must use Doxygen syntax.
+- Vendored third-party files under `tests/third_party/` retain their upstream formatting and are
+  exempt from repository style, comment, and single-return rules.
 - Document public functions with `@brief`, `@param`, and `@return` where applicable.
 - Prefer fixed-width integer types from `<stdint.h>`.
 - Avoid global mutable state.
@@ -31,10 +35,10 @@ interoperability implementation, not as a suitable primitive for new security sy
 
 - Do not use dynamic memory allocation.
 - Calls to `malloc`, `calloc`, `realloc`, and `free` are forbidden.
-- Contexts are fixed-size caller-owned structures intended for stack allocation.
 - The caller supplies all input and output buffers.
 - Use only bounded, fixed-size local storage inside the library.
-- Explicitly erase derived key material with `crypto_des_clear()` or `crypto_tdes_clear()`.
+- Keep key schedules private and explicitly erase all derived key material before a public
+  one-shot operation returns.
 - Sensitive-data erasure must be implemented so that the compiler cannot remove it as a dead
   store.
 
@@ -44,13 +48,20 @@ interoperability implementation, not as a suitable primitive for new security sy
 - `CRYPTO_STATUS_OK` must remain zero.
 - Do not return magic integer error codes.
 - Append new status values to the enum; do not renumber published values.
-- Key parameters use a pointer plus an explicit `size_t` length, for example:
+- Key, IV, input, and output parameters use a pointer plus an explicit `size_t` length, for
+  example:
 
   ```c
-  crypto_status crypto_des_init(
-      crypto_des_context *context,
+  crypto_status crypto_des_encrypt(
       const uint8_t *key,
-      size_t key_length);
+      size_t key_length,
+      crypto_cipher_mode mode,
+      const uint8_t *iv,
+      size_t iv_length,
+      const uint8_t *input,
+      size_t input_length,
+      uint8_t *output,
+      size_t output_length);
   ```
 
 - Validate pointers before using their corresponding lengths or contents.
@@ -64,19 +75,21 @@ interoperability implementation, not as a suitable primitive for new security sy
 ## DES and TDES validation
 
 - Require odd parity in every encoded DES key byte.
-- Provide an explicit helper for callers that choose to set odd parity.
 - Reject weak, semi-weak, and potentially weak DES keys.
 - Weak-key detection must cover all keys that generate no more than four distinct round keys.
 - Compare TDES components by their effective 56-bit values, ignoring parity bits.
 - For 2TDES, require K1 and K2 to be distinct.
 - For 3TDES, require K1, K2, and K3 to be pairwise distinct.
 - Return `CRYPTO_STATUS_DEGENERATE_KEY` when a TDES key bundle collapses to a lower keying option.
-- A failed initialization must leave the destination context cleared and invalid.
-- Keep unchecked key-schedule helpers private. Do not expose an unchecked public initializer.
+- Keep unchecked key-schedule helpers and all derived key material private.
 
 ## Dependencies and implementation sources
 
-- The library and its tests must not depend on third-party libraries.
+- The library must not depend on third-party libraries.
+- Tests use the vendored, header-only Acutest revision recorded under
+  `tests/third_party/acutest/`; do not fetch dependencies during configure or build.
+- Treat the Acutest include directory as a system include so project warning policy applies only
+  to repository-owned test code.
 - Implement DES and TDES in this repository rather than wrapping another crypto library.
 - OpenSSL source may be reviewed as a design reference only.
 - Do not copy OpenSSL implementation code, tables, internal APIs, or code structure.
@@ -95,6 +108,16 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Apply project warning flags only to repository-owned targets, not to external consumers.
 - GCC warnings are errors. Preserve the strict warning set in
   `cmake/modules/CompilerWarnings.cmake`.
+
+## Git commits
+
+- Format commit messages according to Conventional Commits 1.0.0.
+- Use the form `<type>[optional scope]: <description>` for every commit subject.
+- Use lowercase types such as `feat`, `fix`, `docs`, `test`, `refactor`, `build`, `ci`, `chore`,
+  `perf`, `style`, and `revert`.
+- Write the description in the imperative mood, keep it concise, and do not end it with a period.
+- Mark breaking changes with `!` before the colon and explain them in a `BREAKING CHANGE:` footer.
+- Keep each commit focused on one logical change.
 
 ## Dev-container requirement
 
@@ -133,17 +156,17 @@ ctest --preset coverage
 
 ## Testing and verification
 
-- Use the repository's dependency-free C test harness and CTest.
+- Use the vendored Acutest C test harness and register its executables through CTest.
 - Register and run tests through CMake test presets.
 - Test both static and shared libraries in Debug and Release builds.
 - Use the static library for coverage to avoid conflicting `.gcda` output from the shared object.
 - Maintain tests for:
   - published DES, 2TDES, and 3TDES known-answer vectors;
   - encryption/decryption round trips;
-  - odd-parity validation and explicit correction;
+  - odd-parity validation and rejection;
   - weak and degenerate keys;
   - null arguments and invalid lengths;
-  - uninitialized and cleared contexts;
+  - one-shot key, mode, IV, input, and output validation;
   - prohibited in-place operations;
   - every public status string;
   - installation and consumption through `find_package(crypto CONFIG)`.
@@ -156,3 +179,4 @@ ctest --preset coverage
 
 - Project code is licensed under Apache-2.0.
 - Preserve the repository `LICENSE` file and do not add code with an incompatible license.
+- Preserve Acutest's embedded MIT notice and its vendored `LICENSE.md` file.
