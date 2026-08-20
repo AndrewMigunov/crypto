@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "des_internal.h"
+#include "tdes_internal.h"
 
 /** @brief Securely erase bounded sensitive storage. */
 static void crypto_tdes_secure_zero(void *memory, size_t size)
@@ -16,6 +17,49 @@ static void crypto_tdes_secure_zero(void *memory, size_t size)
         bytes[index] = UINT8_C(0);
     }
     return;
+}
+
+/** @brief Compare effective DES keys while ignoring parity bits. */
+static int crypto_tdes_effective_keys_equal(const uint8_t first[CRYPTO_DES_KEY_SIZE],
+                                            const uint8_t second[CRYPTO_DES_KEY_SIZE])
+{
+    uint8_t difference = UINT8_C(0);
+    size_t index;
+    int result;
+
+    for (index = 0U; index < CRYPTO_DES_KEY_SIZE; ++index)
+    {
+        difference =
+            (uint8_t)(difference | (uint8_t)((first[index] ^ second[index]) & UINT8_C(0xfe)));
+    }
+    result = (difference == UINT8_C(0)) ? 1 : 0;
+    return result;
+}
+
+crypto_status crypto_tdes_key_validate_distinct(const uint8_t *key, size_t key_length)
+{
+    crypto_status status = CRYPTO_STATUS_OK;
+
+    if (key == NULL)
+    {
+        status = CRYPTO_STATUS_NULL_ARGUMENT;
+    }
+    else if ((key_length != CRYPTO_TDES2_KEY_SIZE) && (key_length != CRYPTO_TDES3_KEY_SIZE))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if (crypto_tdes_effective_keys_equal(key, key + CRYPTO_DES_KEY_SIZE) != 0)
+    {
+        status = CRYPTO_STATUS_DEGENERATE_KEY;
+    }
+    else if ((key_length == CRYPTO_TDES3_KEY_SIZE) &&
+             ((crypto_tdes_effective_keys_equal(key, key + (2U * CRYPTO_DES_KEY_SIZE)) != 0) ||
+              (crypto_tdes_effective_keys_equal(key + CRYPTO_DES_KEY_SIZE,
+                                                key + (2U * CRYPTO_DES_KEY_SIZE)) != 0)))
+    {
+        status = CRYPTO_STATUS_DEGENERATE_KEY;
+    }
+    return status;
 }
 
 /** @brief Determine whether two bounded byte ranges overlap. */

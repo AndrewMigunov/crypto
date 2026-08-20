@@ -11,6 +11,20 @@ endif()
 
 add_test(NAME cryptomoon.unit COMMAND cryptomoon_tests)
 
+add_executable(cryptomoon_internal_tests test_tdes_internal.c)
+target_link_libraries(cryptomoon_internal_tests PRIVATE cryptomoon_static)
+target_include_directories(cryptomoon_internal_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(cryptomoon_internal_tests SYSTEM PRIVATE third_party/acutest)
+cryptomoon_set_project_warnings(cryptomoon_internal_tests)
+set_target_properties(cryptomoon_internal_tests PROPERTIES C_EXTENSIONS OFF)
+
+if(CRYPTOMOON_ENABLE_COVERAGE)
+    target_compile_options(cryptomoon_internal_tests PRIVATE --coverage -O0 -g)
+    target_link_options(cryptomoon_internal_tests PRIVATE --coverage)
+endif()
+
+add_test(NAME cryptomoon.internal.unit COMMAND cryptomoon_internal_tests)
+
 add_test(NAME cryptomoon.version-refresh
     COMMAND ${CMAKE_COMMAND}
         -DCRYPTOMOON_GENERATOR=${CMAKE_GENERATOR}
