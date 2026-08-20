@@ -1,4 +1,4 @@
-#include <crypto/des.h>
+#include <des.h>
 
 #include <stddef.h>
 #include <stdint.h>

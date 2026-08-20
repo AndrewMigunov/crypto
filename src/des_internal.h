@@ -9,8 +9,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <crypto/des.h>
-#include <crypto/status.h>
+#include <des.h>
+#include <status.h>
 
 #define CRYPTO_DES_ROUND_COUNT 16U /**< Number of DES Feistel rounds. */
 

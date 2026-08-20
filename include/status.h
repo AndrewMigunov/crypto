@@ -3,10 +3,10 @@
 
 /**
  * @file status.h
- * @brief Shared status codes returned by the crypto API.
+ * @brief Shared status codes returned by the cryptomoon API.
  */
 
-#include <crypto/export.h>
+#include <export.h>
 
 /** @brief Result codes returned by fallible library operations. */
 typedef enum crypto_status

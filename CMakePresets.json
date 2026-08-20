@@ -13,7 +13,8 @@
       "toolchainFile": "${sourceDir}/cmake/toolchains/gcc.cmake",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CRYPTO_BUILD_TESTS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CRYPTOMOON_BUILD_TESTS": "ON"
       }
     },
     {
@@ -37,7 +38,7 @@
       "inherits": "debug",
       "displayName": "Coverage",
       "cacheVariables": {
-        "CRYPTO_ENABLE_COVERAGE": "ON"
+        "CRYPTOMOON_ENABLE_COVERAGE": "ON"
       }
     }
   ],

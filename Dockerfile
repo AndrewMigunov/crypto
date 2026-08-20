@@ -15,4 +15,4 @@ RUN apt-get update \
         clang-format \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspace/crypto
+WORKDIR /workspace/cryptomoon

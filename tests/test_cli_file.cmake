@@ -9,7 +9,7 @@ file(WRITE "${input_file}" "OpenAI!!OpenAI!!")
 file(WRITE "${key_file}" "CEFIJLRQ")
 
 execute_process(
-    COMMAND "${CRYPTO_CLI}" encrypt --algorithm des --key-file "${key_file}"
+    COMMAND "${CRYPTOMOON_CLI}" encrypt --algorithm des --key-file "${key_file}"
         --file "${input_file}" --output "${encrypted_file}"
     RESULT_VARIABLE encrypt_result
     ERROR_VARIABLE encrypt_error
@@ -19,7 +19,7 @@ if(NOT encrypt_result EQUAL 0)
 endif()
 
 execute_process(
-    COMMAND "${CRYPTO_CLI}" decrypt --algorithm des --key-file "${key_file}"
+    COMMAND "${CRYPTOMOON_CLI}" decrypt --algorithm des --key-file "${key_file}"
         --file "${encrypted_file}" --output "${recovered_file}"
     RESULT_VARIABLE decrypt_result
     ERROR_VARIABLE decrypt_error

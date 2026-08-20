@@ -1,11 +1,11 @@
 {
-  "name": "crypto-c99",
+  "name": "cryptomoon-c99",
   "build": {
     "dockerfile": "../Dockerfile",
     "context": ".."
   },
-  "workspaceFolder": "/workspace/crypto",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/crypto,type=bind",
+  "workspaceFolder": "/workspace/cryptomoon",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/cryptomoon,type=bind",
   "customizations": {
     "vscode": {
       "extensions": [

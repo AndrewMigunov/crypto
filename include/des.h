@@ -9,9 +9,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <crypto/cipher.h>
-#include <crypto/export.h>
-#include <crypto/status.h>
+#include <cipher.h>
+#include <export.h>
+#include <status.h>
 
 #define CRYPTO_DES_BLOCK_SIZE 8U /**< DES block size in bytes. */
 #define CRYPTO_DES_KEY_SIZE 8U   /**< Encoded DES key size including parity bits. */

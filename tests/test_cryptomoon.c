@@ -1,8 +1,8 @@
 #include <acutest.h>
 
-#include <crypto/des.h>
-#include <crypto/status.h>
-#include <crypto/tdes.h>
+#include <des.h>
+#include <status.h>
+#include <tdes.h>
 
 #include <stddef.h>
 #include <stdint.h>

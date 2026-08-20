@@ -1,7 +1,7 @@
-# crypto
+# cryptomoon
 
-`crypto` is a dependency-free C99 library implementing the DES and two-key and three-key
-Triple DES block primitives. It builds both static and shared `crypto_des` libraries.
+`cryptomoon` is a dependency-free C99 library implementing the DES and two-key and three-key
+Triple DES block primitives. It builds both static and shared `cryptomoon` libraries.
 
 > [!WARNING]
 > DES and TDES are obsolete cryptographic algorithms. This project is intended for education
@@ -52,22 +52,22 @@ building the project never downloads test dependencies.
 - DES and TDES operations are one-shot calls. Key schedules remain private and are erased before
   each call returns.
 
-The public headers are under `include/crypto/`. ECB is the only currently supported cipher mode,
-and each call processes any number of complete blocks without padding. Input lengths must be
+The public headers are under `include/`. ECB is the only currently supported cipher mode, and
+each call processes any number of complete blocks without padding. Input lengths must be
 multiples of the 8-byte DES block size. See the unit tests for complete examples.
 
 ## Command-line application
 
-The `crypto-cli` executable encrypts and decrypts DES, 2TDES, and 3TDES data through the public
+The `cryptomoon-cli` executable encrypts and decrypts DES, 2TDES, and 3TDES data through the public
 library API. Keys can be supplied as hexadecimal text or raw files. Input can likewise be
 hexadecimal text or a raw file:
 
 ```sh
-crypto-cli encrypt --algorithm des \
+cryptomoon-cli encrypt --algorithm des \
     --key 133457799bbcdff1 \
     --input 0123456789abcdef
 
-crypto-cli decrypt --algorithm 3tdes \
+cryptomoon-cli decrypt --algorithm 3tdes \
     --key-file key.bin \
     --file encrypted.bin \
     --output plaintext.bin
@@ -78,9 +78,9 @@ bytes are written to the selected file. File processing is streaming and does no
 file into memory. Keys and inputs must have exact supported sizes, key parity bits are ignored,
 and input must consist of complete 8-byte blocks because the application does not apply padding.
 
-Run `crypto-cli --help` for the complete syntax. As with the library itself, this application is
-only for education and legacy interoperability; DES, TDES, and ECB are unsuitable for new secure
-systems.
+Run `cryptomoon-cli --help` for the complete syntax. As with the library itself, this application
+is only for education and legacy interoperability; DES, TDES, and ECB are unsuitable for new
+secure systems.
 
 ## Installation
 
@@ -88,16 +88,15 @@ systems.
 cmake --install build/release --prefix /desired/prefix
 ```
 
-The installation provides the `crypto-cli` executable, `libcrypto_des` in static and shared
-forms, public headers, and CMake package targets `crypto::static` and `crypto::shared`. A Release
-build also generates Doxygen HTML documentation in `build/release/docs/html` and installs it under
-the documentation directory.
+The installation provides the `cryptomoon-cli` executable, `libcryptomoon` in static and shared
+forms, public headers, and CMake package targets `cryptomoon::static` and `cryptomoon::shared`. A
+Release build also generates Doxygen HTML documentation in `build/release/docs/html` and installs
+it under the documentation directory.
 
 ## Design sources
 
 The implementation was written independently using the DES/TDEA specification and published
-test vectors. OpenSSL's low-level DES interface was reviewed only as an API and validation design
-reference; its implementation was not copied.
+test vectors.
 
 ## License
 

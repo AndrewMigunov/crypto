@@ -1,4 +1,4 @@
-function(crypto_set_project_warnings target)
+function(cryptomoon_set_project_warnings target)
     if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
         target_compile_options(${target} PRIVATE
             -Wall

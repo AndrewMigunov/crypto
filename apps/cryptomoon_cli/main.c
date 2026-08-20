@@ -1,6 +1,6 @@
-#include <crypto/des.h>
-#include <crypto/status.h>
-#include <crypto/tdes.h>
+#include <des.h>
+#include <status.h>
+#include <tdes.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -63,7 +63,7 @@ static void cli_print_usage(FILE *stream)
 {
     (void)fprintf(stream,
                   "Usage:\n"
-                  "  crypto-cli <encrypt|decrypt> --algorithm <des|2tdes|3tdes>\n"
+                  "  cryptomoon-cli <encrypt|decrypt> --algorithm <des|2tdes|3tdes>\n"
                   "      (--key <hex> | --key-file <path>)\n"
                   "      (--input <hex> | --file <path>) [--output <path>]\n"
                   "\n"
@@ -208,7 +208,7 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
         (((config->input_path != NULL) && (strcmp(config->output_path, config->input_path) == 0)) ||
          ((config->key_path != NULL) && (strcmp(config->output_path, config->key_path) == 0))))
     {
-        (void)fprintf(stderr, "crypto-cli: output must not overwrite an input or key file\n");
+        (void)fprintf(stderr, "cryptomoon-cli: output must not overwrite an input or key file\n");
         result = CLI_EXIT_USAGE;
     }
     return result;
@@ -297,7 +297,7 @@ static int cli_load_key(const cli_config *config, uint8_t *key, size_t key_size)
 
         if (key_file == NULL)
         {
-            (void)fprintf(stderr, "crypto-cli: cannot open key file '%s'\n", config->key_path);
+            (void)fprintf(stderr, "cryptomoon-cli: cannot open key file '%s'\n", config->key_path);
             result = CLI_EXIT_IO;
         }
         else
@@ -307,7 +307,8 @@ static int cli_load_key(const cli_config *config, uint8_t *key, size_t key_size)
 
             if (ferror(key_file) != 0)
             {
-                (void)fprintf(stderr, "crypto-cli: cannot read key file '%s'\n", config->key_path);
+                (void)fprintf(stderr, "cryptomoon-cli: cannot read key file '%s'\n",
+                              config->key_path);
                 result = CLI_EXIT_IO;
             }
             else if ((bytes_read != key_size) || (extra_byte != EOF))
@@ -316,14 +317,15 @@ static int cli_load_key(const cli_config *config, uint8_t *key, size_t key_size)
             }
             if ((fclose(key_file) != 0) && (result == CLI_EXIT_OK))
             {
-                (void)fprintf(stderr, "crypto-cli: cannot close key file '%s'\n", config->key_path);
+                (void)fprintf(stderr, "cryptomoon-cli: cannot close key file '%s'\n",
+                              config->key_path);
                 result = CLI_EXIT_IO;
             }
         }
     }
     if (result == CLI_EXIT_USAGE)
     {
-        (void)fprintf(stderr, "crypto-cli: key has an invalid encoding or length\n");
+        (void)fprintf(stderr, "cryptomoon-cli: key has an invalid encoding or length\n");
     }
     return result;
 }
@@ -370,7 +372,7 @@ static int cli_write_block(FILE *output_file, const uint8_t *block)
     {
         if (fwrite(block, 1U, CRYPTO_DES_BLOCK_SIZE, output_file) != CRYPTO_DES_BLOCK_SIZE)
         {
-            (void)fprintf(stderr, "crypto-cli: cannot write output file\n");
+            (void)fprintf(stderr, "cryptomoon-cli: cannot write output file\n");
             result = CLI_EXIT_IO;
         }
     }
@@ -398,7 +400,7 @@ static int cli_process_block(const cli_config *config, const uint8_t *key, size_
     status = cli_transform_block(config, key, key_size, input, output);
     if (status != CRYPTO_STATUS_OK)
     {
-        (void)fprintf(stderr, "crypto-cli: cryptographic operation failed: %s\n",
+        (void)fprintf(stderr, "cryptomoon-cli: cryptographic operation failed: %s\n",
                       crypto_status_string(status));
         result = CLI_EXIT_CRYPTO;
     }
@@ -420,7 +422,7 @@ static int cli_process_hex_input(const cli_config *config, const uint8_t *key, s
 
     if ((text_length % (2U * CRYPTO_DES_BLOCK_SIZE)) != 0U)
     {
-        (void)fprintf(stderr, "crypto-cli: hex input must contain complete 8-byte blocks\n");
+        (void)fprintf(stderr, "cryptomoon-cli: hex input must contain complete 8-byte blocks\n");
         result = CLI_EXIT_USAGE;
     }
     for (text_offset = 0U; (text_offset < text_length) && (result == CLI_EXIT_OK);
@@ -435,7 +437,7 @@ static int cli_process_hex_input(const cli_config *config, const uint8_t *key, s
         }
         else
         {
-            (void)fprintf(stderr, "crypto-cli: input is not valid hexadecimal data\n");
+            (void)fprintf(stderr, "cryptomoon-cli: input is not valid hexadecimal data\n");
         }
         cli_secure_zero(input, sizeof(input));
     }
@@ -452,7 +454,7 @@ static int cli_process_file_input(const cli_config *config, const uint8_t *key, 
 
     if (input_file == NULL)
     {
-        (void)fprintf(stderr, "crypto-cli: cannot open input file '%s'\n", config->input_path);
+        (void)fprintf(stderr, "cryptomoon-cli: cannot open input file '%s'\n", config->input_path);
         result = CLI_EXIT_IO;
     }
     while ((result == CLI_EXIT_OK) && (finished == 0))
@@ -466,12 +468,14 @@ static int cli_process_file_input(const cli_config *config, const uint8_t *key, 
         }
         else if (ferror(input_file) != 0)
         {
-            (void)fprintf(stderr, "crypto-cli: cannot read input file '%s'\n", config->input_path);
+            (void)fprintf(stderr, "cryptomoon-cli: cannot read input file '%s'\n",
+                          config->input_path);
             result = CLI_EXIT_IO;
         }
         else if (bytes_read != 0U)
         {
-            (void)fprintf(stderr, "crypto-cli: input file must contain complete 8-byte blocks\n");
+            (void)fprintf(stderr,
+                          "cryptomoon-cli: input file must contain complete 8-byte blocks\n");
             result = CLI_EXIT_USAGE;
         }
         else
@@ -482,7 +486,7 @@ static int cli_process_file_input(const cli_config *config, const uint8_t *key, 
     }
     if ((input_file != NULL) && (fclose(input_file) != 0) && (result == CLI_EXIT_OK))
     {
-        (void)fprintf(stderr, "crypto-cli: cannot close input file '%s'\n", config->input_path);
+        (void)fprintf(stderr, "cryptomoon-cli: cannot close input file '%s'\n", config->input_path);
         result = CLI_EXIT_IO;
     }
     return result;
@@ -503,7 +507,7 @@ static int cli_execute(const cli_config *config)
         output_file = fopen(config->output_path, "wb");
         if (output_file == NULL)
         {
-            (void)fprintf(stderr, "crypto-cli: cannot open output file '%s'\n",
+            (void)fprintf(stderr, "cryptomoon-cli: cannot open output file '%s'\n",
                           config->output_path);
             result = CLI_EXIT_IO;
         }
@@ -518,7 +522,8 @@ static int cli_execute(const cli_config *config)
     }
     if ((output_file != NULL) && (fclose(output_file) != 0) && (result == CLI_EXIT_OK))
     {
-        (void)fprintf(stderr, "crypto-cli: cannot close output file '%s'\n", config->output_path);
+        (void)fprintf(stderr, "cryptomoon-cli: cannot close output file '%s'\n",
+                      config->output_path);
         result = CLI_EXIT_IO;
     }
     if ((output_file == NULL) && (result == CLI_EXIT_OK) && (putchar('\n') == EOF))

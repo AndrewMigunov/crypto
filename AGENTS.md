@@ -2,8 +2,8 @@
 
 ## Project scope
 
-This repository contains the `crypto` C99 library and its `crypto-cli` command-line consumer. The
-first implementation stage supports:
+This repository contains the `cryptomoon` C99 library and its `cryptomoon-cli` command-line
+consumer. The first implementation stage supports:
 
 - DES block encryption and decryption;
 - two-key Triple DES (2TDES) using K1, K2, K1;
@@ -31,7 +31,7 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Document public functions with `@brief`, `@param`, and `@return` where applicable.
 - Prefer fixed-width integer types from `<stdint.h>`.
 - Avoid global mutable state.
-- Keep public headers in `include/crypto/` and C implementation files in `src/`.
+- Keep public headers directly in `include/` and C implementation files in `src/`.
 - Keep command-line applications under `apps/` and exercise only the public library API from
   them.
 
@@ -96,8 +96,6 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Treat the Acutest include directory as a system include so project warning policy applies only
   to repository-owned test code.
 - Implement DES and TDES in this repository rather than wrapping another crypto library.
-- OpenSSL source may be reviewed as a design reference only.
-- Do not copy OpenSSL implementation code, tables, internal APIs, or code structure.
 - Verify behavior primarily with published specifications and independent known-answer vectors.
 
 ## Build system
@@ -107,9 +105,9 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Keep CMake toolchain files under `cmake/toolchains/`.
 - Configure, build, and test through `CMakePresets.json`.
 - Supported presets are `debug`, `release`, and `coverage`.
-- Build both `crypto_static` and `crypto_shared` from the same implementation sources.
-- Installed library artifacts are named `libcrypto_des.a` and `libcrypto_des.so` on Linux.
-- Install and export the CMake package targets `crypto::static` and `crypto::shared`.
+- Build both `cryptomoon_static` and `cryptomoon_shared` from the same implementation sources.
+- Installed library artifacts are named `libcryptomoon.a` and `libcryptomoon.so` on Linux.
+- Install and export the CMake package targets `cryptomoon::static` and `cryptomoon::shared`.
 - Apply project warning flags only to repository-owned targets, not to external consumers.
 - GCC warnings are errors. Preserve the strict warning set in
   `cmake/modules/CompilerWarnings.cmake`.
@@ -157,7 +155,7 @@ ctest --preset coverage
 - Generate HTML documentation; LaTeX output is not required.
 - Use Graphviz for supported diagrams.
 - Use `README.md` as the Doxygen main page.
-- Install generated HTML documentation under `share/doc/crypto/html`.
+- Install generated HTML documentation under `share/doc/cryptomoon/html`.
 
 ## Testing and verification
 
@@ -175,7 +173,7 @@ ctest --preset coverage
   - prohibited in-place operations;
   - every public status string;
   - CLI known-answer vectors, invalid input, and raw-file round trips;
-  - installation and consumption through `find_package(crypto CONFIG)`.
+  - installation and consumption through `find_package(cryptomoon CONFIG)`.
 - Keep line and function coverage at 100% unless a deliberate exception is documented and
   approved.
 - Before completing a change, run the relevant presets inside the dev-container with `-Werror`

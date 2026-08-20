@@ -9,10 +9,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <crypto/cipher.h>
-#include <crypto/des.h>
-#include <crypto/export.h>
-#include <crypto/status.h>
+#include <cipher.h>
+#include <des.h>
+#include <export.h>
+#include <status.h>
 
 #define CRYPTO_TDES2_KEY_SIZE 16U /**< Encoded size of K1 || K2 in bytes. */
 #define CRYPTO_TDES3_KEY_SIZE 24U /**< Encoded size of K1 || K2 || K3 in bytes. */

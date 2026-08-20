@@ -1,4 +1,4 @@
-#include <crypto/status.h>
+#include <status.h>
 
 const char *crypto_status_string(crypto_status status)
 {
