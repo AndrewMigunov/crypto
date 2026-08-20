@@ -131,4 +131,12 @@ if(TARGET cryptomoon_cli)
     set_tests_properties(cryptomoon.cli.ignore-invalid-parity PROPERTIES
         PASS_REGULAR_EXPRESSION "85e813540f0ab405"
     )
+
+    add_test(NAME cryptomoon.cli.accept-degenerate-2tdes
+        COMMAND cryptomoon_cli encrypt --algorithm 2tdes
+            --key 133457799bbcdff1123556789abcdef0 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.accept-degenerate-2tdes PROPERTIES
+        PASS_REGULAR_EXPRESSION "85e813540f0ab405"
+    )
 endif()

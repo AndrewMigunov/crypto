@@ -222,21 +222,69 @@ static void test_parity_ignored(void)
     return;
 }
 
-/** @brief Exercise weak-key and TDES degeneracy rejection. */
+/** @brief Verify one degenerate TDES bundle against its equivalent lower keying option. */
+static void check_degenerate_tdes_case(const uint8_t *tdes_key, size_t tdes_key_length,
+                                       cipher_operation equivalent_operation,
+                                       const uint8_t *equivalent_key, size_t equivalent_key_length)
+{
+    uint8_t expected[CRYPTO_DES_BLOCK_SIZE] = {0};
+    uint8_t actual[CRYPTO_DES_BLOCK_SIZE] = {0};
+    uint8_t decrypted[CRYPTO_DES_BLOCK_SIZE] = {0};
+    crypto_status status;
+
+    status =
+        equivalent_operation(equivalent_key, equivalent_key_length, CRYPTO_CIPHER_MODE_ECB, NULL,
+                             0U, zero_block, sizeof(zero_block), expected, sizeof(expected));
+    check_status(status, CRYPTO_STATUS_OK);
+    status = crypto_tdes_encrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                                 zero_block, sizeof(zero_block), actual, sizeof(actual));
+    check_status(status, CRYPTO_STATUS_OK);
+    check_block(actual, expected);
+    status = crypto_tdes_decrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                                 actual, sizeof(actual), decrypted, sizeof(decrypted));
+    check_status(status, CRYPTO_STATUS_OK);
+    check_block(decrypted, zero_block);
+    return;
+}
+
+/** @brief Verify processing of every TDES degeneracy class. */
+static void test_degenerate_tdes_keys(void)
+{
+    static const uint8_t repeated_key2[CRYPTO_TDES2_KEY_SIZE] = {0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc,
+                                                                 0xdf, 0xf1, 0x12, 0x35, 0x56, 0x78,
+                                                                 0x9a, 0xbd, 0xde, 0xf0};
+    static const uint8_t repeated_first_key3[CRYPTO_TDES3_KEY_SIZE] = {
+        0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1, 0x12, 0x35, 0x56, 0x78,
+        0x9a, 0xbd, 0xde, 0xf0, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01};
+    static const uint8_t repeated_last_key3[CRYPTO_TDES3_KEY_SIZE] = {
+        0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1, 0x23, 0x45, 0x67, 0x89,
+        0xab, 0xcd, 0xef, 0x01, 0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee, 0x00};
+    static const uint8_t repeated_outer_key3[CRYPTO_TDES3_KEY_SIZE] = {
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x23, 0x45, 0x67, 0x89,
+        0xab, 0xcd, 0xef, 0x01, 0x00, 0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee};
+
+    TEST_CASE("2TDES/K1-equals-K2");
+    check_degenerate_tdes_case(repeated_key2, sizeof(repeated_key2), crypto_des_encrypt,
+                               repeated_key2, CRYPTO_DES_KEY_SIZE);
+    TEST_CASE("3TDES/K1-equals-K2");
+    check_degenerate_tdes_case(repeated_first_key3, sizeof(repeated_first_key3), crypto_des_encrypt,
+                               repeated_first_key3 + (2U * CRYPTO_DES_KEY_SIZE),
+                               CRYPTO_DES_KEY_SIZE);
+    TEST_CASE("3TDES/K2-equals-K3");
+    check_degenerate_tdes_case(repeated_last_key3, sizeof(repeated_last_key3), crypto_des_encrypt,
+                               repeated_last_key3, CRYPTO_DES_KEY_SIZE);
+    TEST_CASE("3TDES/K1-equals-K3");
+    check_degenerate_tdes_case(repeated_outer_key3, sizeof(repeated_outer_key3),
+                               crypto_tdes_encrypt, repeated_outer_key3, CRYPTO_TDES2_KEY_SIZE);
+    return;
+}
+
+/** @brief Exercise weak-key rejection for DES and TDES components. */
 static void test_key_validation(void)
 {
     static const uint8_t weak_key[CRYPTO_DES_KEY_SIZE] = {0x01, 0x01, 0x01, 0x01,
                                                           0x01, 0x01, 0x01, 0x01};
     static const uint8_t weak_key_even_parity[CRYPTO_DES_KEY_SIZE] = {0};
-    static const uint8_t parity_different_repeated_key[CRYPTO_TDES2_KEY_SIZE] = {
-        0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1,
-        0x12, 0x35, 0x56, 0x78, 0x9a, 0xbd, 0xde, 0xf0};
-    static const uint8_t repeated_first_key3[CRYPTO_TDES3_KEY_SIZE] = {
-        0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1, 0x01, 0x23, 0x45, 0x67,
-        0x89, 0xab, 0xcd, 0xef, 0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1};
-    static const uint8_t repeated_last_key3[CRYPTO_TDES3_KEY_SIZE] = {
-        0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1, 0x01, 0x23, 0x45, 0x67,
-        0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
     static const uint8_t weak_tdes_component[CRYPTO_TDES3_KEY_SIZE] = {
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x23, 0x45, 0x67,
         0x89, 0xab, 0xcd, 0xef, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23};
@@ -244,12 +292,6 @@ static void test_key_validation(void)
         {"DES/weak-key", crypto_des_encrypt, weak_key, sizeof(weak_key), CRYPTO_STATUS_WEAK_KEY},
         {"DES/weak-key-even-parity", crypto_des_encrypt, weak_key_even_parity,
          sizeof(weak_key_even_parity), CRYPTO_STATUS_WEAK_KEY},
-        {"2TDES/parity-different-repeated-key", crypto_tdes_encrypt, parity_different_repeated_key,
-         sizeof(parity_different_repeated_key), CRYPTO_STATUS_DEGENERATE_KEY},
-        {"3TDES/first-equals-third", crypto_tdes_encrypt, repeated_first_key3,
-         sizeof(repeated_first_key3), CRYPTO_STATUS_DEGENERATE_KEY},
-        {"3TDES/second-equals-third", crypto_tdes_encrypt, repeated_last_key3,
-         sizeof(repeated_last_key3), CRYPTO_STATUS_DEGENERATE_KEY},
         {"3TDES/weak-component", crypto_tdes_encrypt, weak_tdes_component,
          sizeof(weak_tdes_component), CRYPTO_STATUS_WEAK_KEY}};
     uint8_t output[CRYPTO_DES_BLOCK_SIZE] = {0};
@@ -389,6 +431,7 @@ static void test_version(void)
 TEST_LIST = {{"vectors/known-answer", test_known_answer_vectors},
              {"ecb/multiple-blocks", test_multiple_blocks},
              {"keys/parity-ignored", test_parity_ignored},
+             {"keys/degenerate-compatible", test_degenerate_tdes_keys},
              {"keys/validation", test_key_validation},
              {"api/contract", test_public_contract},
              {"status/strings", test_status_strings},

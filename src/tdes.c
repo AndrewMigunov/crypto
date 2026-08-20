@@ -18,23 +18,6 @@ static void crypto_tdes_secure_zero(void *memory, size_t size)
     return;
 }
 
-/** @brief Compare effective DES keys while ignoring parity bits. */
-static int crypto_tdes_effective_keys_equal(const uint8_t first[CRYPTO_DES_KEY_SIZE],
-                                            const uint8_t second[CRYPTO_DES_KEY_SIZE])
-{
-    uint8_t difference = UINT8_C(0);
-    size_t index;
-    int result;
-
-    for (index = 0U; index < CRYPTO_DES_KEY_SIZE; ++index)
-    {
-        difference =
-            (uint8_t)(difference | (uint8_t)((first[index] ^ second[index]) & UINT8_C(0xfe)));
-    }
-    result = (difference == UINT8_C(0)) ? 1 : 0;
-    return result;
-}
-
 /** @brief Determine whether two bounded byte ranges overlap. */
 static int crypto_tdes_buffers_overlap(const uint8_t *input, size_t input_length,
                                        const uint8_t *output, size_t output_length)
@@ -54,25 +37,6 @@ static int crypto_tdes_buffers_overlap(const uint8_t *input, size_t input_length
         result = ((input_address - output_address) < output_length) ? 1 : 0;
     }
     return result;
-}
-
-/** @brief Validate TDES component distinctness for the selected keying option. */
-static crypto_status crypto_tdes_validate_distinct_keys(const uint8_t *key, size_t key_length)
-{
-    crypto_status status = CRYPTO_STATUS_OK;
-
-    if (crypto_tdes_effective_keys_equal(key, key + CRYPTO_DES_KEY_SIZE) != 0)
-    {
-        status = CRYPTO_STATUS_DEGENERATE_KEY;
-    }
-    else if ((key_length == CRYPTO_TDES3_KEY_SIZE) &&
-             ((crypto_tdes_effective_keys_equal(key, key + (2U * CRYPTO_DES_KEY_SIZE)) != 0) ||
-              (crypto_tdes_effective_keys_equal(key + CRYPTO_DES_KEY_SIZE,
-                                                key + (2U * CRYPTO_DES_KEY_SIZE)) != 0)))
-    {
-        status = CRYPTO_STATUS_DEGENERATE_KEY;
-    }
-    return status;
 }
 
 /** @brief Expand the TDES key components into private schedules. */
@@ -163,11 +127,7 @@ static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
     }
     else
     {
-        status = crypto_tdes_validate_distinct_keys(key, key_length);
-        if (status == CRYPTO_STATUS_OK)
-        {
-            status = crypto_tdes_make_schedules(schedules, key, key_length);
-        }
+        status = crypto_tdes_make_schedules(schedules, key, key_length);
         if (status == CRYPTO_STATUS_OK)
         {
             for (block_offset = 0U; block_offset < input_length;

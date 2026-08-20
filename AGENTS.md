@@ -82,10 +82,8 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Require future generated DES keys to use odd parity in every encoded key byte.
 - Reject weak, semi-weak, and potentially weak DES keys.
 - Weak-key detection must cover all keys that generate no more than four distinct round keys.
-- Compare TDES components by their effective 56-bit values, ignoring parity bits.
-- For 2TDES, require K1 and K2 to be distinct.
-- For 3TDES, require K1, K2, and K3 to be pairwise distinct.
-- Return `CRYPTO_STATUS_DEGENERATE_KEY` when a TDES key bundle collapses to a lower keying option.
+- Accept degenerate TDES bundles and process them as the equivalent lower keying option.
+- Keep `CRYPTO_STATUS_DEGENERATE_KEY` as a reserved published status value.
 - Keep unchecked key-schedule helpers and all derived key material private.
 
 ## Dependencies and implementation sources
@@ -175,7 +173,7 @@ ctest --preset coverage
   - published DES, 2TDES, and 3TDES known-answer vectors;
   - encryption/decryption round trips;
   - parity-insensitive DES and TDES encryption and decryption;
-  - weak and degenerate keys;
+  - weak keys and degenerate-key compatibility;
   - null arguments and invalid lengths;
   - one-shot key, mode, IV, input, and output validation;
   - prohibited in-place operations;

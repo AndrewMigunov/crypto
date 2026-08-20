@@ -3,10 +3,6 @@
 `cryptomoon` is a dependency-free C99 library implementing the DES and two-key and three-key
 Triple DES block primitives. It builds both static and shared `cryptomoon` libraries.
 
-> [!WARNING]
-> DES and TDES are obsolete cryptographic algorithms. This project is intended for education
-> and legacy interoperability, not for protecting new systems or data.
-
 ## Development environment
 
 The repository contains an Ubuntu 24.04 development container with GCC, CMake, Ninja, GDB,
@@ -42,10 +38,11 @@ building the project never downloads test dependencies.
   memory.
 - DES operates on an 8-byte key and an 8-byte block.
 - 2TDES accepts 16 bytes (`K1, K2`) and applies `K1, K2, K1`.
-- 3TDES accepts 24 bytes (`K1, K2, K3`) with three distinct effective keys.
+- 3TDES accepts 24 bytes (`K1, K2, K3`).
 - DES parity bits are ignored during encryption and decryption; caller-owned keys are never
   modified.
-- Weak, semi-weak, potentially weak, and degenerate keys are rejected.
+- Weak, semi-weak, and potentially weak DES components are rejected. Degenerate TDES bundles are
+  accepted and behave as the equivalent lower keying option.
 - Input and output buffers must be distinct and must not overlap.
 - Bytes are interpreted in the bit order defined by the DES specification, independently of host
   endianness.
