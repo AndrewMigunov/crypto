@@ -8,6 +8,7 @@ include(CMakePackageConfigHelpers)
 include(cmake/modules/CompilerWarnings.cmake)
 
 option(CRYPTO_BUILD_TESTS "Build the crypto test suite" ${BUILD_TESTING})
+option(CRYPTO_BUILD_CLI "Build the crypto command-line application" ON)
 option(CRYPTO_ENABLE_COVERAGE "Enable GCC coverage instrumentation" OFF)
 
 set(CMAKE_C_STANDARD 99)
@@ -81,6 +82,10 @@ set_target_properties(crypto_shared PROPERTIES
 )
 if(CRYPTO_ENABLE_COVERAGE)
     target_link_options(crypto_shared PRIVATE --coverage)
+endif()
+
+if(CRYPTO_BUILD_CLI)
+    add_subdirectory(apps/crypto_cli)
 endif()
 
 if(CRYPTO_BUILD_TESTS)

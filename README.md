@@ -55,15 +55,42 @@ The public headers are under `include/crypto/`. ECB is the only currently suppor
 and each call processes any number of complete blocks without padding. Input lengths must be
 multiples of the 8-byte DES block size. See the unit tests for complete examples.
 
+## Command-line application
+
+The `crypto-cli` executable encrypts and decrypts DES, 2TDES, and 3TDES data through the public
+library API. Keys can be supplied as hexadecimal text or raw files. Input can likewise be
+hexadecimal text or a raw file:
+
+```sh
+crypto-cli encrypt --algorithm des \
+    --key 133457799bbcdff1 \
+    --input 0123456789abcdef
+
+crypto-cli decrypt --algorithm 3tdes \
+    --key-file key.bin \
+    --file encrypted.bin \
+    --output plaintext.bin
+```
+
+Without `--output`, the result is printed as lowercase hexadecimal text. With `--output`, raw
+bytes are written to the selected file. File processing is streaming and does not load the whole
+file into memory. Keys and inputs must have exact supported sizes, key parity is never modified,
+and input must consist of complete 8-byte blocks because the application does not apply padding.
+
+Run `crypto-cli --help` for the complete syntax. As with the library itself, this application is
+only for education and legacy interoperability; DES, TDES, and ECB are unsuitable for new secure
+systems.
+
 ## Installation
 
 ```sh
 cmake --install build/release --prefix /desired/prefix
 ```
 
-The installation provides `libcrypto_des` in static and shared forms, public headers, and CMake
-package targets `crypto::static` and `crypto::shared`. A Release build also generates Doxygen
-HTML documentation in `build/release/docs/html` and installs it under the documentation directory.
+The installation provides the `crypto-cli` executable, `libcrypto_des` in static and shared
+forms, public headers, and CMake package targets `crypto::static` and `crypto::shared`. A Release
+build also generates Doxygen HTML documentation in `build/release/docs/html` and installs it under
+the documentation directory.
 
 ## Design sources
 

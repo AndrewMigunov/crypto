@@ -2,13 +2,15 @@
 
 ## Project scope
 
-This repository contains the `crypto` C99 library. The first implementation stage supports:
+This repository contains the `crypto` C99 library and its `crypto-cli` command-line consumer. The
+first implementation stage supports:
 
 - DES block encryption and decryption;
 - two-key Triple DES (2TDES) using K1, K2, K1;
 - three-key Triple DES (3TDES) using K1, K2, K3;
 - ECB operations over any number of complete blocks;
-- no block modes and no padding.
+- no block modes and no padding;
+- CLI encryption and decryption from hexadecimal text or raw files.
 
 DES and TDES are obsolete algorithms. Treat this project as an educational and legacy
 interoperability implementation, not as a suitable primitive for new security systems.
@@ -30,6 +32,8 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Prefer fixed-width integer types from `<stdint.h>`.
 - Avoid global mutable state.
 - Keep public headers in `include/crypto/` and C implementation files in `src/`.
+- Keep command-line applications under `apps/` and exercise only the public library API from
+  them.
 
 ## Memory policy
 
@@ -169,6 +173,7 @@ ctest --preset coverage
   - one-shot key, mode, IV, input, and output validation;
   - prohibited in-place operations;
   - every public status string;
+  - CLI known-answer vectors, invalid input, and raw-file round trips;
   - installation and consumption through `find_package(crypto CONFIG)`.
 - Keep line and function coverage at 100% unless a deliberate exception is documented and
   approved.
