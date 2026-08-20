@@ -74,11 +74,12 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Block byte order follows the DES specification and must not depend on host endianness.
 - In-place block operations are forbidden.
 - Input and output buffers must be distinct and must not overlap.
-- Do not silently modify key parity during context initialization.
+- Ignore DES parity bits during encryption and decryption without modifying caller-owned keys.
+- Keep a private odd-parity normalization helper available for future key generation.
 
 ## DES and TDES validation
 
-- Require odd parity in every encoded DES key byte.
+- Require future generated DES keys to use odd parity in every encoded key byte.
 - Reject weak, semi-weak, and potentially weak DES keys.
 - Weak-key detection must cover all keys that generate no more than four distinct round keys.
 - Compare TDES components by their effective 56-bit values, ignoring parity bits.
@@ -167,7 +168,7 @@ ctest --preset coverage
 - Maintain tests for:
   - published DES, 2TDES, and 3TDES known-answer vectors;
   - encryption/decryption round trips;
-  - odd-parity validation and rejection;
+  - parity-insensitive DES and TDES encryption and decryption;
   - weak and degenerate keys;
   - null arguments and invalid lengths;
   - one-shot key, mode, IV, input, and output validation;

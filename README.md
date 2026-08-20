@@ -43,7 +43,8 @@ building the project never downloads test dependencies.
 - DES operates on an 8-byte key and an 8-byte block.
 - 2TDES accepts 16 bytes (`K1, K2`) and applies `K1, K2, K1`.
 - 3TDES accepts 24 bytes (`K1, K2, K3`) with three distinct effective keys.
-- Key bytes must already use odd DES parity; the library validates but never modifies them.
+- DES parity bits are ignored during encryption and decryption; caller-owned keys are never
+  modified.
 - Weak, semi-weak, potentially weak, and degenerate keys are rejected.
 - Input and output buffers must be distinct and must not overlap.
 - Bytes are interpreted in the bit order defined by the DES specification, independently of host
@@ -74,7 +75,7 @@ crypto-cli decrypt --algorithm 3tdes \
 
 Without `--output`, the result is printed as lowercase hexadecimal text. With `--output`, raw
 bytes are written to the selected file. File processing is streaming and does not load the whole
-file into memory. Keys and inputs must have exact supported sizes, key parity is never modified,
+file into memory. Keys and inputs must have exact supported sizes, key parity bits are ignored,
 and input must consist of complete 8-byte blocks because the application does not apply padding.
 
 Run `crypto-cli --help` for the complete syntax. As with the library itself, this application is

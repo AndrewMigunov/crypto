@@ -19,7 +19,7 @@
 
 /**
  * @brief Encrypt complete blocks with two-key or three-key Triple DES.
- * @param key Pointer to K1 || K2 or K1 || K2 || K3.
+ * @param key Pointer to K1 || K2 or K1 || K2 || K3; parity bits are ignored.
  * @param key_length Key length; must equal CRYPTO_TDES2_KEY_SIZE or CRYPTO_TDES3_KEY_SIZE.
  * @param mode Cipher mode; currently only CRYPTO_CIPHER_MODE_ECB is supported.
  * @param iv Initialization vector; ignored when @p iv_length is zero for ECB.
@@ -38,7 +38,7 @@ CRYPTO_API crypto_status crypto_tdes_encrypt(const uint8_t *key, size_t key_leng
 
 /**
  * @brief Decrypt complete blocks with two-key or three-key Triple DES.
- * @param key Pointer to K1 || K2 or K1 || K2 || K3.
+ * @param key Pointer to K1 || K2 or K1 || K2 || K3; parity bits are ignored.
  * @param key_length Key length; must equal CRYPTO_TDES2_KEY_SIZE or CRYPTO_TDES3_KEY_SIZE.
  * @param mode Cipher mode; currently only CRYPTO_CIPHER_MODE_ECB is supported.
  * @param iv Initialization vector; ignored when @p iv_length is zero for ECB.

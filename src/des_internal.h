@@ -22,7 +22,13 @@ typedef struct crypto_des_schedule
 } crypto_des_schedule;
 
 /**
- * @brief Validate and expand a DES key.
+ * @brief Set odd parity on an encoded DES key held in private mutable storage.
+ * @param key Key bytes to normalize in place.
+ */
+void crypto_des_key_set_odd_parity(uint8_t key[CRYPTO_DES_KEY_SIZE]);
+
+/**
+ * @brief Normalize, validate, and expand a DES key without modifying caller storage.
  * @param schedule Schedule to initialize.
  * @param key Pointer to the encoded DES key.
  * @param key_length Encoded key length.

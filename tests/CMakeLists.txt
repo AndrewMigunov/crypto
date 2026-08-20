@@ -92,9 +92,11 @@ if(TARGET crypto_cli)
     )
     set_tests_properties(crypto.cli.reject-partial-block PROPERTIES WILL_FAIL TRUE)
 
-    add_test(NAME crypto.cli.reject-invalid-parity
+    add_test(NAME crypto.cli.ignore-invalid-parity
         COMMAND crypto_cli encrypt --algorithm des
             --key 123457799bbcdff1 --input 0123456789abcdef
     )
-    set_tests_properties(crypto.cli.reject-invalid-parity PROPERTIES WILL_FAIL TRUE)
+    set_tests_properties(crypto.cli.ignore-invalid-parity PROPERTIES
+        PASS_REGULAR_EXPRESSION "85e813540f0ab405"
+    )
 endif()

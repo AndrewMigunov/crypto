@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "des_internal.h"
 
@@ -221,52 +222,36 @@ static int crypto_des_round_keys_are_weak(const uint64_t round_keys[CRYPTO_DES_R
     return result;
 }
 
-static crypto_status crypto_des_key_check_parity(const uint8_t *key, size_t key_length)
+/** @brief Set odd parity on a private encoded DES key. */
+void crypto_des_key_set_odd_parity(uint8_t key[CRYPTO_DES_KEY_SIZE])
 {
-    crypto_status status = CRYPTO_STATUS_OK;
     uint8_t parity;
     uint8_t value;
     size_t byte_index;
 
-    if (key_length != CRYPTO_DES_KEY_SIZE)
+    for (byte_index = 0U; byte_index < CRYPTO_DES_KEY_SIZE; ++byte_index)
     {
-        status = CRYPTO_STATUS_INVALID_LENGTH;
+        value = (uint8_t)(key[byte_index] & UINT8_C(0xfe));
+        parity = value;
+        parity ^= (uint8_t)(parity >> 4U);
+        parity ^= (uint8_t)(parity >> 2U);
+        parity ^= (uint8_t)(parity >> 1U);
+        key[byte_index] = (uint8_t)(value | (uint8_t)((parity & UINT8_C(1)) ^ UINT8_C(1)));
     }
-    else
-    {
-        /** Accumulate every byte result instead of returning on the first failure. */
-        parity = UINT8_C(1);
-        for (byte_index = 0U; byte_index < CRYPTO_DES_KEY_SIZE; ++byte_index)
-        {
-            value = key[byte_index];
-            value ^= (uint8_t)(value >> 4U);
-            value ^= (uint8_t)(value >> 2U);
-            value ^= (uint8_t)(value >> 1U);
-            parity = (uint8_t)(parity & (uint8_t)(value & UINT8_C(1)));
-        }
-        if (parity == UINT8_C(0))
-        {
-            status = CRYPTO_STATUS_INVALID_KEY_PARITY;
-        }
-    }
-    return status;
+    return;
 }
 
-static crypto_status crypto_des_key_validate(const uint8_t *key, size_t key_length)
+static crypto_status crypto_des_key_validate(const uint8_t key[CRYPTO_DES_KEY_SIZE])
 {
-    crypto_status status;
+    crypto_status status = CRYPTO_STATUS_OK;
     uint64_t round_keys[CRYPTO_DES_ROUND_COUNT];
 
-    status = crypto_des_key_check_parity(key, key_length);
-    if (status == CRYPTO_STATUS_OK)
+    crypto_des_make_round_keys(key, round_keys);
+    if (crypto_des_round_keys_are_weak(round_keys) != 0)
     {
-        crypto_des_make_round_keys(key, round_keys);
-        if (crypto_des_round_keys_are_weak(round_keys) != 0)
-        {
-            status = CRYPTO_STATUS_WEAK_KEY;
-        }
-        crypto_des_secure_zero(round_keys, sizeof(round_keys));
+        status = CRYPTO_STATUS_WEAK_KEY;
     }
+    crypto_des_secure_zero(round_keys, sizeof(round_keys));
     return status;
 }
 
@@ -274,13 +259,26 @@ crypto_status crypto_des_schedule_init(crypto_des_schedule *schedule, const uint
                                        size_t key_length)
 {
     crypto_status status = CRYPTO_STATUS_OK;
+    uint8_t normalized_key[CRYPTO_DES_KEY_SIZE];
 
     crypto_des_secure_zero(schedule, sizeof(*schedule));
-    status = crypto_des_key_validate(key, key_length);
-    if (status == CRYPTO_STATUS_OK)
+    crypto_des_secure_zero(normalized_key, sizeof(normalized_key));
+    if (key_length != CRYPTO_DES_KEY_SIZE)
     {
-        crypto_des_make_round_keys(key, schedule->round_keys);
+        status = CRYPTO_STATUS_INVALID_LENGTH;
     }
+    else
+    {
+        /** Normalize only a private copy; parity bits do not affect the effective key. */
+        (void)memcpy(normalized_key, key, sizeof(normalized_key));
+        crypto_des_key_set_odd_parity(normalized_key);
+        status = crypto_des_key_validate(normalized_key);
+        if (status == CRYPTO_STATUS_OK)
+        {
+            crypto_des_make_round_keys(normalized_key, schedule->round_keys);
+        }
+    }
+    crypto_des_secure_zero(normalized_key, sizeof(normalized_key));
     return status;
 }
 

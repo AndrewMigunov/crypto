@@ -13,7 +13,7 @@ typedef enum crypto_status
 {
     CRYPTO_STATUS_OK = 0,              /**< The operation completed successfully. */
     CRYPTO_STATUS_NULL_ARGUMENT,       /**< A required pointer argument was NULL. */
-    CRYPTO_STATUS_INVALID_KEY_PARITY,  /**< A DES key byte does not have odd parity. */
+    CRYPTO_STATUS_INVALID_KEY_PARITY,  /**< Reserved legacy parity-validation status. */
     CRYPTO_STATUS_WEAK_KEY,            /**< The key produces too few round keys. */
     CRYPTO_STATUS_DEGENERATE_KEY,      /**< TDES collapses to a lower keying option. */
     CRYPTO_STATUS_INVALID_CONTEXT,     /**< The context is not initialized. */

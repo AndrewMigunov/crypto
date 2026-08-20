@@ -18,7 +18,7 @@
 
 /**
  * @brief Encrypt complete DES blocks without retaining a public key context.
- * @param key Pointer to the encoded DES key.
+ * @param key Pointer to the encoded DES key; parity bits are ignored.
  * @param key_length Key length; must equal CRYPTO_DES_KEY_SIZE.
  * @param mode Cipher mode; currently only CRYPTO_CIPHER_MODE_ECB is supported.
  * @param iv Initialization vector; ignored when @p iv_length is zero for ECB.
@@ -37,7 +37,7 @@ CRYPTO_API crypto_status crypto_des_encrypt(const uint8_t *key, size_t key_lengt
 
 /**
  * @brief Decrypt complete DES blocks without retaining a public key context.
- * @param key Pointer to the encoded DES key.
+ * @param key Pointer to the encoded DES key; parity bits are ignored.
  * @param key_length Key length; must equal CRYPTO_DES_KEY_SIZE.
  * @param mode Cipher mode; currently only CRYPTO_CIPHER_MODE_ECB is supported.
  * @param iv Initialization vector; ignored when @p iv_length is zero for ECB.

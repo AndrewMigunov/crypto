@@ -179,40 +179,76 @@ static void test_multiple_blocks(void)
     return;
 }
 
-/** @brief Exercise parity, weak-key, and TDES degeneracy rejection. */
+/** @brief Verify that DES and TDES operations ignore every encoded parity bit. */
+static void test_parity_ignored(void)
+{
+    static const uint8_t des_even_parity[CRYPTO_DES_KEY_SIZE] = {0x12, 0x35, 0x56, 0x78,
+                                                                 0x9a, 0xbd, 0xde, 0xf0};
+    static const uint8_t tdes2_even_parity[CRYPTO_TDES2_KEY_SIZE] = {
+        0x00, 0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee,
+        0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee, 0x00};
+    static const uint8_t tdes3_even_parity[CRYPTO_TDES3_KEY_SIZE] = {
+        0x00, 0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee, 0x22, 0x44, 0x66, 0x88,
+        0xaa, 0xcc, 0xee, 0x00, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee, 0x00, 0x22};
+    static const cipher_vector vectors[] = {
+        {"DES", crypto_des_encrypt, crypto_des_decrypt, des_even_parity, sizeof(des_even_parity),
+         des_plaintext, des_ciphertext},
+        {"2TDES", crypto_tdes_encrypt, crypto_tdes_decrypt, tdes2_even_parity,
+         sizeof(tdes2_even_parity), tdes_plaintext, tdes2_ciphertext},
+        {"3TDES", crypto_tdes_encrypt, crypto_tdes_decrypt, tdes3_even_parity,
+         sizeof(tdes3_even_parity), tdes_plaintext, tdes3_ciphertext}};
+    uint8_t encrypted[CRYPTO_DES_BLOCK_SIZE] = {0};
+    uint8_t decrypted[CRYPTO_DES_BLOCK_SIZE] = {0};
+    const cipher_vector *vector;
+    crypto_status status;
+    size_t index;
+
+    for (index = 0U; index < (sizeof(vectors) / sizeof(vectors[0])); ++index)
+    {
+        vector = &vectors[index];
+        TEST_CASE(vector->name);
+        status =
+            vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                            vector->plaintext, CRYPTO_DES_BLOCK_SIZE, encrypted, sizeof(encrypted));
+        check_status(status, CRYPTO_STATUS_OK);
+        check_block(encrypted, vector->ciphertext);
+        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                                 vector->ciphertext, CRYPTO_DES_BLOCK_SIZE, decrypted,
+                                 sizeof(decrypted));
+        check_status(status, CRYPTO_STATUS_OK);
+        check_block(decrypted, vector->plaintext);
+    }
+    return;
+}
+
+/** @brief Exercise weak-key and TDES degeneracy rejection. */
 static void test_key_validation(void)
 {
-    static const uint8_t bad_parity[CRYPTO_DES_KEY_SIZE] = {0x12, 0x34, 0x56, 0x78,
-                                                            0x9a, 0xbc, 0xde, 0xf0};
     static const uint8_t weak_key[CRYPTO_DES_KEY_SIZE] = {0x01, 0x01, 0x01, 0x01,
                                                           0x01, 0x01, 0x01, 0x01};
-    static const uint8_t repeated_key[CRYPTO_TDES2_KEY_SIZE] = {0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc,
-                                                                0xdf, 0xf1, 0x13, 0x34, 0x57, 0x79,
-                                                                0x9b, 0xbc, 0xdf, 0xf1};
+    static const uint8_t weak_key_even_parity[CRYPTO_DES_KEY_SIZE] = {0};
+    static const uint8_t parity_different_repeated_key[CRYPTO_TDES2_KEY_SIZE] = {
+        0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1,
+        0x12, 0x35, 0x56, 0x78, 0x9a, 0xbd, 0xde, 0xf0};
     static const uint8_t repeated_first_key3[CRYPTO_TDES3_KEY_SIZE] = {
         0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1, 0x01, 0x23, 0x45, 0x67,
         0x89, 0xab, 0xcd, 0xef, 0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1};
     static const uint8_t repeated_last_key3[CRYPTO_TDES3_KEY_SIZE] = {
         0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1, 0x01, 0x23, 0x45, 0x67,
         0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
-    static const uint8_t bad_tdes_parity[CRYPTO_TDES2_KEY_SIZE] = {
-        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
     static const uint8_t weak_tdes_component[CRYPTO_TDES3_KEY_SIZE] = {
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x23, 0x45, 0x67,
         0x89, 0xab, 0xcd, 0xef, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23};
     static const key_validation_case cases[] = {
-        {"DES/invalid-parity", crypto_des_encrypt, bad_parity, sizeof(bad_parity),
-         CRYPTO_STATUS_INVALID_KEY_PARITY},
         {"DES/weak-key", crypto_des_encrypt, weak_key, sizeof(weak_key), CRYPTO_STATUS_WEAK_KEY},
-        {"2TDES/repeated-key", crypto_tdes_encrypt, repeated_key, sizeof(repeated_key),
-         CRYPTO_STATUS_DEGENERATE_KEY},
+        {"DES/weak-key-even-parity", crypto_des_encrypt, weak_key_even_parity,
+         sizeof(weak_key_even_parity), CRYPTO_STATUS_WEAK_KEY},
+        {"2TDES/parity-different-repeated-key", crypto_tdes_encrypt, parity_different_repeated_key,
+         sizeof(parity_different_repeated_key), CRYPTO_STATUS_DEGENERATE_KEY},
         {"3TDES/first-equals-third", crypto_tdes_encrypt, repeated_first_key3,
          sizeof(repeated_first_key3), CRYPTO_STATUS_DEGENERATE_KEY},
         {"3TDES/second-equals-third", crypto_tdes_encrypt, repeated_last_key3,
          sizeof(repeated_last_key3), CRYPTO_STATUS_DEGENERATE_KEY},
-        {"2TDES/invalid-parity", crypto_tdes_encrypt, bad_tdes_parity, sizeof(bad_tdes_parity),
-         CRYPTO_STATUS_INVALID_KEY_PARITY},
         {"3TDES/weak-component", crypto_tdes_encrypt, weak_tdes_component,
          sizeof(weak_tdes_component), CRYPTO_STATUS_WEAK_KEY}};
     uint8_t output[CRYPTO_DES_BLOCK_SIZE] = {0};
@@ -342,6 +378,7 @@ static void test_status_strings(void)
 
 TEST_LIST = {{"vectors/known-answer", test_known_answer_vectors},
              {"ecb/multiple-blocks", test_multiple_blocks},
+             {"keys/parity-ignored", test_parity_ignored},
              {"keys/validation", test_key_validation},
              {"api/contract", test_public_contract},
              {"status/strings", test_status_strings},
