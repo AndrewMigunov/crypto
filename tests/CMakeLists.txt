@@ -153,4 +153,73 @@ if(TARGET cryptomoon_cli)
     set_tests_properties(cryptomoon.cli.accept-degenerate-2tdes PROPERTIES
         PASS_REGULAR_EXPRESSION "85e813540f0ab405"
     )
+
+    add_test(NAME cryptomoon.cli.des.cbc.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode cbc
+            --key 0123456789abcdef --iv 1234567890abcdef
+            --input 4e6f77206973207468652074696d6520666f7220616c6c20
+    )
+    set_tests_properties(cryptomoon.cli.des.cbc.encrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "e5c7cdde872bf27c43e934008c389c0f683788499a7c05f6"
+    )
+
+    add_test(NAME cryptomoon.cli.des.cbc.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm des --mode cbc
+            --key 0123456789abcdef --iv 1234567890abcdef
+            --input e5c7cdde872bf27c43e934008c389c0f683788499a7c05f6
+    )
+    set_tests_properties(cryptomoon.cli.des.cbc.decrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "4e6f77206973207468652074696d6520666f7220616c6c20"
+    )
+
+    add_test(NAME cryptomoon.cli.3tdes.cbc.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm 3tdes --mode cbc
+            --key 0123456789abcdef23456789abcdef01456789abcdef0123
+            --iv cafebabecafebabe
+            --input fedcba9876543210fedcba9876543210fedcba9876543210
+    )
+    set_tests_properties(cryptomoon.cli.3tdes.cbc.encrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "c2ea000c1690dadf2f11210bb3c1dc2c2ca3d89a53d496f1"
+    )
+
+    add_test(NAME cryptomoon.cli.3tdes.cbc.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm 3tdes --mode cbc
+            --key 0123456789abcdef23456789abcdef01456789abcdef0123
+            --iv cafebabecafebabe
+            --input c2ea000c1690dadf2f11210bb3c1dc2c2ca3d89a53d496f1
+    )
+    set_tests_properties(cryptomoon.cli.3tdes.cbc.decrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "fedcba9876543210fedcba9876543210fedcba9876543210"
+    )
+
+    add_test(NAME cryptomoon.cli.cbc-file-round-trip
+        COMMAND ${CMAKE_COMMAND}
+            -DCRYPTOMOON_CLI=$<TARGET_FILE:cryptomoon_cli>
+            -DTEST_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/cli-cbc-file-test
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_cbc_file.cmake
+    )
+
+    add_test(NAME cryptomoon.cli.cbc-without-iv
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode cbc
+            --key 133457799bbcdff1 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.cbc-without-iv PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.cbc-invalid-iv-length
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode cbc
+            --key 133457799bbcdff1 --iv 1234 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.cbc-invalid-iv-length PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.unknown-mode
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ctr
+            --key 133457799bbcdff1 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.unknown-mode PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.ecb-with-iv
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ecb
+            --key 133457799bbcdff1 --iv 1234567890abcdef --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.ecb-with-iv PROPERTIES WILL_FAIL TRUE)
 endif()

@@ -34,13 +34,23 @@ typedef enum cli_algorithm
     CLI_ALGORITHM_TDES3
 } cli_algorithm;
 
+/** @brief Supported cipher mode. */
+typedef enum cli_mode
+{
+    CLI_MODE_ECB = 0,
+    CLI_MODE_CBC
+} cli_mode;
+
 /** @brief Parsed command-line configuration. */
 typedef struct cli_config
 {
     cli_operation operation;
     cli_algorithm algorithm;
+    cli_mode mode;
     const char *key_hex;
     const char *key_path;
+    const char *iv_hex;
+    const char *iv_path;
     const char *input_hex;
     const char *input_path;
     const char *output_path;
@@ -69,10 +79,13 @@ static void cli_print_usage(FILE *stream)
                   "  cryptomoon-cli <encrypt|decrypt> --algorithm <des|2tdes|3tdes>\n"
                   "      (--key <hex> | --key-file <path>)\n"
                   "      (--input <hex> | --file <path>) [--output <path>]\n"
+                  "      [--mode <ecb|cbc>] [--iv <hex> | --iv-file <path>]\n"
                   "\n"
                   "Without --output, the result is written as lowercase hex to stdout.\n"
                   "With --output, the result is written as raw bytes to the selected file.\n"
                   "Input must contain complete 8-byte blocks; no padding is applied.\n"
+                  "The default mode is ECB. CBC requires a 8-byte initialization vector\n"
+                  "supplied with --iv or --iv-file.\n"
                   "\n"
                   "Warning: DES, TDES, and ECB are obsolete and are provided only for\n"
                   "education and legacy interoperability.\n");
@@ -147,6 +160,7 @@ static int cli_set_option(const char **destination, const char *value)
 static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
 {
     int argument_index = 2;
+    int mode_set = 0;
     int result = CLI_EXIT_OK;
 
     (void)memset(config, 0, sizeof(*config));
@@ -185,6 +199,35 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
                 }
             }
         }
+        else if (strcmp(option, "--mode") == 0)
+        {
+            if (mode_set != 0)
+            {
+                result = CLI_EXIT_USAGE;
+            }
+            else if (strcmp(argv[argument_index + 1], "ecb") == 0)
+            {
+                config->mode = CLI_MODE_ECB;
+                mode_set = 1;
+            }
+            else if (strcmp(argv[argument_index + 1], "cbc") == 0)
+            {
+                config->mode = CLI_MODE_CBC;
+                mode_set = 1;
+            }
+            else
+            {
+                result = CLI_EXIT_USAGE;
+            }
+        }
+        else if (strcmp(option, "--iv") == 0)
+        {
+            result = cli_set_option(&config->iv_hex, argv[argument_index + 1]);
+        }
+        else if (strcmp(option, "--iv-file") == 0)
+        {
+            result = cli_set_option(&config->iv_path, argv[argument_index + 1]);
+        }
         else if (strcmp(option, "--key") == 0)
         {
             result = cli_set_option(&config->key_hex, argv[argument_index + 1]);
@@ -215,13 +258,20 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
                                     ((config->key_hex != NULL) && (config->key_path != NULL)) ||
                                     ((config->input_hex == NULL) && (config->input_path == NULL)) ||
                                     ((config->input_hex != NULL) && (config->input_path != NULL)) ||
-                                    (config->algorithm == CLI_ALGORITHM_NONE)))
+                                    (config->algorithm == CLI_ALGORITHM_NONE) ||
+                                    ((config->mode == CLI_MODE_ECB) &&
+                                     ((config->iv_hex != NULL) || (config->iv_path != NULL))) ||
+                                    ((config->mode == CLI_MODE_CBC) &&
+                                     ((config->iv_hex == NULL) && (config->iv_path == NULL))) ||
+                                    ((config->mode == CLI_MODE_CBC) &&
+                                     (config->iv_hex != NULL) && (config->iv_path != NULL))))
     {
         result = CLI_EXIT_USAGE;
     }
     if ((result == CLI_EXIT_OK) && (config->output_path != NULL) &&
         (((config->input_path != NULL) && (strcmp(config->output_path, config->input_path) == 0)) ||
-         ((config->key_path != NULL) && (strcmp(config->output_path, config->key_path) == 0))))
+         ((config->key_path != NULL) && (strcmp(config->output_path, config->key_path) == 0)) ||
+         ((config->iv_path != NULL) && (strcmp(config->output_path, config->iv_path) == 0))))
     {
         (void)fprintf(stderr, "cryptomoon-cli: output must not overwrite an input or key file\n");
         result = CLI_EXIT_USAGE;
@@ -345,7 +395,62 @@ static int cli_load_key(const cli_config *config, uint8_t *key, size_t key_size)
     return result;
 }
 
-/** @brief Apply the selected library operation to one block. */
+/** @brief Load an 8-byte initialization vector from hex or a raw iv file. */
+static int cli_load_iv(const cli_config *config, uint8_t iv[CRYPTO_DES_BLOCK_SIZE])
+{
+    int result = CLI_EXIT_OK;
+
+    if (config->iv_hex != NULL)
+    {
+        if (strlen(config->iv_hex) != (2U * CRYPTO_DES_BLOCK_SIZE))
+        {
+            result = CLI_EXIT_USAGE;
+        }
+        else
+        {
+            result = cli_decode_hex(config->iv_hex, CRYPTO_DES_BLOCK_SIZE, iv);
+        }
+    }
+    else
+    {
+        FILE *iv_file = fopen(config->iv_path, "rb");
+
+        if (iv_file == NULL)
+        {
+            (void)fprintf(stderr, "cryptomoon-cli: cannot open iv file '%s'\n", config->iv_path);
+            result = CLI_EXIT_IO;
+        }
+        else
+        {
+            size_t bytes_read = fread(iv, 1U, CRYPTO_DES_BLOCK_SIZE, iv_file);
+            int extra_byte = fgetc(iv_file);
+
+            if (ferror(iv_file) != 0)
+            {
+                (void)fprintf(stderr, "cryptomoon-cli: cannot read iv file '%s'\n",
+                              config->iv_path);
+                result = CLI_EXIT_IO;
+            }
+            else if ((bytes_read != CRYPTO_DES_BLOCK_SIZE) || (extra_byte != EOF))
+            {
+                result = CLI_EXIT_USAGE;
+            }
+            if ((fclose(iv_file) != 0) && (result == CLI_EXIT_OK))
+            {
+                (void)fprintf(stderr, "cryptomoon-cli: cannot close iv file '%s'\n",
+                              config->iv_path);
+                result = CLI_EXIT_IO;
+            }
+        }
+    }
+    if (result == CLI_EXIT_USAGE)
+    {
+        (void)fprintf(stderr, "cryptomoon-cli: iv has an invalid encoding or length\n");
+    }
+    return result;
+}
+
+/** @brief Apply the selected library operation to one block in ECB mode. */
 static crypto_status cli_transform_block(const cli_config *config, const uint8_t *key,
                                          size_t key_size, const uint8_t *input, uint8_t *output)
 {
@@ -404,15 +509,55 @@ static int cli_write_block(FILE *output_file, const uint8_t *block)
     return result;
 }
 
-/** @brief Transform and write a single complete block. */
+/** @brief XOR two complete blocks into a bounded destination. */
+static void cli_xor_blocks(uint8_t result[CRYPTO_DES_BLOCK_SIZE],
+                           const uint8_t left[CRYPTO_DES_BLOCK_SIZE],
+                           const uint8_t right[CRYPTO_DES_BLOCK_SIZE])
+{
+    size_t byte_index;
+
+    for (byte_index = 0U; byte_index < CRYPTO_DES_BLOCK_SIZE; ++byte_index)
+    {
+        result[byte_index] = (uint8_t)(left[byte_index] ^ right[byte_index]);
+    }
+    return;
+}
+
+/** @brief Transform and write a single complete block, chaining CBC state in the CLI. */
 static int cli_process_block(const cli_config *config, const uint8_t *key, size_t key_size,
-                             const uint8_t *input, FILE *output_file)
+                             uint8_t chain[CRYPTO_DES_BLOCK_SIZE], const uint8_t *input,
+                             FILE *output_file)
 {
     uint8_t output[CRYPTO_DES_BLOCK_SIZE];
+    uint8_t prepared[CRYPTO_DES_BLOCK_SIZE];
     crypto_status status;
     int result;
 
-    status = cli_transform_block(config, key, key_size, input, output);
+    if (config->mode == CLI_MODE_CBC)
+    {
+        if (config->operation == CLI_OPERATION_ENCRYPT)
+        {
+            cli_xor_blocks(prepared, input, chain);
+            status = cli_transform_block(config, key, key_size, prepared, output);
+            if (status == CRYPTO_STATUS_OK)
+            {
+                (void)memcpy(chain, output, CRYPTO_DES_BLOCK_SIZE);
+            }
+        }
+        else
+        {
+            status = cli_transform_block(config, key, key_size, input, prepared);
+            if (status == CRYPTO_STATUS_OK)
+            {
+                cli_xor_blocks(output, prepared, chain);
+                (void)memcpy(chain, input, CRYPTO_DES_BLOCK_SIZE);
+            }
+        }
+    }
+    else
+    {
+        status = cli_transform_block(config, key, key_size, input, output);
+    }
     if (status != CRYPTO_STATUS_OK)
     {
         (void)fprintf(stderr, "cryptomoon-cli: cryptographic operation failed: %s\n",
@@ -424,12 +569,13 @@ static int cli_process_block(const cli_config *config, const uint8_t *key, size_
         result = cli_write_block(output_file, output);
     }
     cli_secure_zero(output, sizeof(output));
+    cli_secure_zero(prepared, sizeof(prepared));
     return result;
 }
 
 /** @brief Process hexadecimal command-line input block by block. */
 static int cli_process_hex_input(const cli_config *config, const uint8_t *key, size_t key_size,
-                                 FILE *output_file)
+                                 uint8_t chain[CRYPTO_DES_BLOCK_SIZE], FILE *output_file)
 {
     size_t text_length = strlen(config->input_hex);
     size_t text_offset;
@@ -448,7 +594,7 @@ static int cli_process_hex_input(const cli_config *config, const uint8_t *key, s
         result = cli_decode_hex(config->input_hex + text_offset, CRYPTO_DES_BLOCK_SIZE, input);
         if (result == CLI_EXIT_OK)
         {
-            result = cli_process_block(config, key, key_size, input, output_file);
+            result = cli_process_block(config, key, key_size, chain, input, output_file);
         }
         else
         {
@@ -461,7 +607,7 @@ static int cli_process_hex_input(const cli_config *config, const uint8_t *key, s
 
 /** @brief Process a raw input file block by block. */
 static int cli_process_file_input(const cli_config *config, const uint8_t *key, size_t key_size,
-                                  FILE *output_file)
+                                  uint8_t chain[CRYPTO_DES_BLOCK_SIZE], FILE *output_file)
 {
     FILE *input_file = fopen(config->input_path, "rb");
     int result = CLI_EXIT_OK;
@@ -479,7 +625,7 @@ static int cli_process_file_input(const cli_config *config, const uint8_t *key, 
 
         if (bytes_read == sizeof(input))
         {
-            result = cli_process_block(config, key, key_size, input, output_file);
+            result = cli_process_block(config, key, key_size, chain, input, output_file);
         }
         else if (ferror(input_file) != 0)
         {
@@ -511,12 +657,18 @@ static int cli_process_file_input(const cli_config *config, const uint8_t *key, 
 static int cli_execute(const cli_config *config)
 {
     uint8_t key[CRYPTO_TDES3_KEY_SIZE];
+    uint8_t chain[CRYPTO_DES_BLOCK_SIZE];
     size_t key_size = cli_key_size(config->algorithm);
     FILE *output_file = NULL;
     int result;
 
     cli_secure_zero(key, sizeof(key));
+    cli_secure_zero(chain, sizeof(chain));
     result = cli_load_key(config, key, key_size);
+    if ((result == CLI_EXIT_OK) && (config->mode == CLI_MODE_CBC))
+    {
+        result = cli_load_iv(config, chain);
+    }
     if ((result == CLI_EXIT_OK) && (config->output_path != NULL))
     {
         output_file = fopen(config->output_path, "wb");
@@ -529,11 +681,11 @@ static int cli_execute(const cli_config *config)
     }
     if ((result == CLI_EXIT_OK) && (config->input_hex != NULL))
     {
-        result = cli_process_hex_input(config, key, key_size, output_file);
+        result = cli_process_hex_input(config, key, key_size, chain, output_file);
     }
     else if (result == CLI_EXIT_OK)
     {
-        result = cli_process_file_input(config, key, key_size, output_file);
+        result = cli_process_file_input(config, key, key_size, chain, output_file);
     }
     if ((output_file != NULL) && (fclose(output_file) != 0) && (result == CLI_EXIT_OK))
     {
@@ -545,6 +697,7 @@ static int cli_execute(const cli_config *config)
     {
         result = CLI_EXIT_IO;
     }
+    cli_secure_zero(chain, sizeof(chain));
     cli_secure_zero(key, sizeof(key));
     return result;
 }
