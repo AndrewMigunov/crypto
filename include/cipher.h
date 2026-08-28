@@ -10,7 +10,8 @@
 typedef enum crypto_cipher_mode
 {
     CRYPTO_CIPHER_MODE_ECB = 0, /**< Electronic Codebook mode. */
-    CRYPTO_CIPHER_MODE_CBC      /**< Cipher Block Chaining mode. */
+    CRYPTO_CIPHER_MODE_CBC,     /**< Cipher Block Chaining mode. */
+    CRYPTO_CIPHER_MODE_CFB64    /**< Cipher Feedback mode with full-block feedback; CFB-8 may follow. */
 } crypto_cipher_mode;
 
 #endif

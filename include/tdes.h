@@ -21,11 +21,13 @@
  * @brief Encrypt complete blocks with two-key or three-key Triple DES.
  * @param key Pointer to K1 || K2 or K1 || K2 || K3; parity bits are ignored.
  * @param key_length Key length; must equal CRYPTO_TDES2_KEY_SIZE or CRYPTO_TDES3_KEY_SIZE.
- * @param mode Cipher mode; CRYPTO_CIPHER_MODE_ECB or CRYPTO_CIPHER_MODE_CBC.
+ * @param mode Cipher mode; CRYPTO_CIPHER_MODE_ECB, CRYPTO_CIPHER_MODE_CBC, or
+ *        CRYPTO_CIPHER_MODE_CFB64.
  * @param iv Initialization vector; required and 8 bytes long when @p mode is
- *        CRYPTO_CIPHER_MODE_CBC, ignored when @p mode is CRYPTO_CIPHER_MODE_ECB.
+ *        CRYPTO_CIPHER_MODE_CBC or CRYPTO_CIPHER_MODE_CFB64, ignored when @p mode is
+ *        CRYPTO_CIPHER_MODE_ECB.
  * @param iv_length Initialization-vector length; must equal zero for ECB or
- *        CRYPTO_DES_BLOCK_SIZE for CBC.
+ *        CRYPTO_DES_BLOCK_SIZE for CBC and CFB64.
  * @param input Pointer to the input blocks.
  * @param input_length Input length; must be a multiple of CRYPTO_DES_BLOCK_SIZE.
  * @param output Pointer to the output blocks; it must not overlap @p input.
@@ -42,11 +44,13 @@ CRYPTO_API crypto_status crypto_tdes_encrypt(const uint8_t *key, size_t key_leng
  * @brief Decrypt complete blocks with two-key or three-key Triple DES.
  * @param key Pointer to K1 || K2 or K1 || K2 || K3; parity bits are ignored.
  * @param key_length Key length; must equal CRYPTO_TDES2_KEY_SIZE or CRYPTO_TDES3_KEY_SIZE.
- * @param mode Cipher mode; CRYPTO_CIPHER_MODE_ECB or CRYPTO_CIPHER_MODE_CBC.
+ * @param mode Cipher mode; CRYPTO_CIPHER_MODE_ECB, CRYPTO_CIPHER_MODE_CBC, or
+ *        CRYPTO_CIPHER_MODE_CFB64.
  * @param iv Initialization vector; required and 8 bytes long when @p mode is
- *        CRYPTO_CIPHER_MODE_CBC, ignored when @p mode is CRYPTO_CIPHER_MODE_ECB.
+ *        CRYPTO_CIPHER_MODE_CBC or CRYPTO_CIPHER_MODE_CFB64, ignored when @p mode is
+ *        CRYPTO_CIPHER_MODE_ECB.
  * @param iv_length Initialization-vector length; must equal zero for ECB or
- *        CRYPTO_DES_BLOCK_SIZE for CBC.
+ *        CRYPTO_DES_BLOCK_SIZE for CBC and CFB64.
  * @param input Pointer to the input blocks.
  * @param input_length Input length; must be a multiple of CRYPTO_DES_BLOCK_SIZE.
  * @param output Pointer to the output blocks; it must not overlap @p input.

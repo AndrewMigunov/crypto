@@ -171,7 +171,8 @@ static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
     {
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
-    else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (mode != CRYPTO_CIPHER_MODE_CBC))
+    else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (mode != CRYPTO_CIPHER_MODE_CBC) &&
+             (mode != CRYPTO_CIPHER_MODE_CFB64))
     {
         status = CRYPTO_STATUS_INVALID_MODE;
     }
@@ -179,11 +180,11 @@ static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
-    else if ((mode == CRYPTO_CIPHER_MODE_CBC) && (iv == NULL))
+    else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (iv == NULL))
     {
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
-    else if ((mode == CRYPTO_CIPHER_MODE_CBC) && (iv_length != CRYPTO_DES_BLOCK_SIZE))
+    else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (iv_length != CRYPTO_DES_BLOCK_SIZE))
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
@@ -204,10 +205,27 @@ static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
         status = crypto_tdes_make_schedules(schedules, key, key_length);
         if (status == CRYPTO_STATUS_OK)
         {
-            if (mode == CRYPTO_CIPHER_MODE_CBC)
+            if (mode != CRYPTO_CIPHER_MODE_ECB)
             {
                 (void)memcpy(chain, iv, sizeof(chain));
-                if (decrypt == 0)
+                if (mode == CRYPTO_CIPHER_MODE_CFB64)
+                {
+                    for (block_offset = 0U; block_offset < input_length;
+                         block_offset += CRYPTO_DES_BLOCK_SIZE)
+                    {
+                        crypto_tdes_transform(schedules, chain, scratch, 0);
+                        crypto_tdes_xor_blocks(output + block_offset, input + block_offset, scratch);
+                        if (decrypt == 0)
+                        {
+                            (void)memcpy(chain, output + block_offset, sizeof(chain));
+                        }
+                        else
+                        {
+                            (void)memcpy(chain, input + block_offset, sizeof(chain));
+                        }
+                    }
+                }
+                else if (decrypt == 0)
                 {
                     for (block_offset = 0U; block_offset < input_length;
                          block_offset += CRYPTO_DES_BLOCK_SIZE)
