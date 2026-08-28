@@ -49,10 +49,11 @@ building the project never downloads test dependencies.
 - DES and TDES operations are one-shot calls. Key schedules remain private and are erased before
   each call returns.
 
-The public headers are under `include/`. DES, 2TDES, and 3TDES support ECB, CBC, and CFB64 modes,
-and each call processes any number of complete blocks without padding. CBC and CFB64 require an
-8-byte initialization vector, while ECB ignores the IV and requires a zero IV length. Input lengths
-must be multiples of the 8-byte DES block size. See the unit tests for complete examples.
+The public headers are under `include/`. DES, 2TDES, and 3TDES support ECB, CBC, CFB64, and OFB64
+modes, and each call processes any number of complete blocks without padding. CBC, CFB64, and OFB64
+require an 8-byte initialization vector, while ECB ignores the IV and requires a zero IV length.
+Input lengths must be multiples of the 8-byte DES block size. See the unit tests for complete
+examples.
 
 The generated `version.h` header exposes the CMake project version, the short Git commit hash,
 and their combined `CRYPTOMOON_FULL_VERSION` value. The allocation-free `crypto_version()`
@@ -75,8 +76,8 @@ cryptomoon-cli decrypt --algorithm 3tdes \
     --output plaintext.bin
 ```
 
-CBC mode is selected with `--mode cbc` and CFB64 with `--mode cfb64`; both require an 8-byte
-initialization vector:
+CBC mode is selected with `--mode cbc`, CFB64 with `--mode cfb64`, and OFB64 with
+`--mode ofb64`; all three require an 8-byte initialization vector:
 
 ```sh
 cryptomoon-cli encrypt --algorithm des --mode cbc \
@@ -84,6 +85,10 @@ cryptomoon-cli encrypt --algorithm des --mode cbc \
     --input 4e6f77206973207468652074696d6520666f7220616c6c20
 
 cryptomoon-cli encrypt --algorithm des --mode cfb64 \
+    --key 0123456789abcdef --iv 1234567890abcdef \
+    --input 4e6f77206973207468652074696d6520666f7220616c6c20
+
+cryptomoon-cli encrypt --algorithm des --mode ofb64 \
     --key 0123456789abcdef --iv 1234567890abcdef \
     --input 4e6f77206973207468652074696d6520666f7220616c6c20
 ```

@@ -11,8 +11,10 @@ consumer. The first implementation stage supports:
 - ECB operations over any number of complete blocks;
 - CBC operations over any number of complete blocks using an 8-byte initialization vector;
 - CFB64 operations over any number of complete blocks using an 8-byte initialization vector;
+- OFB64 operations over any number of complete blocks using an 8-byte initialization vector;
 - no padding;
-- CLI encryption and decryption from hexadecimal text or raw files, in ECB, CBC, or CFB64 mode.
+- CLI encryption and decryption from hexadecimal text or raw files, in ECB, CBC, CFB64, or OFB64
+  mode.
 
 DES and TDES are obsolete algorithms. Treat this project as an educational and legacy
 interoperability implementation, not as a suitable primitive for new security systems.
