@@ -357,7 +357,7 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
     else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (mode != CRYPTO_CIPHER_MODE_CBC) &&
-             (mode != CRYPTO_CIPHER_MODE_CFB64))
+             (mode != CRYPTO_CIPHER_MODE_CFB64) && (mode != CRYPTO_CIPHER_MODE_OFB64))
     {
         status = CRYPTO_STATUS_INVALID_MODE;
     }
@@ -404,6 +404,16 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
                         {
                             (void)memcpy(chain, input + block_offset, sizeof(chain));
                         }
+                    }
+                }
+                else if (mode == CRYPTO_CIPHER_MODE_OFB64)
+                {
+                    for (block_offset = 0U; block_offset < input_length;
+                         block_offset += CRYPTO_DES_BLOCK_SIZE)
+                    {
+                        crypto_des_schedule_encrypt(&schedule, chain, scratch);
+                        crypto_des_xor_blocks(output + block_offset, input + block_offset, scratch);
+                        (void)memcpy(chain, scratch, sizeof(chain));
                     }
                 }
                 else if (decrypt == 0)
