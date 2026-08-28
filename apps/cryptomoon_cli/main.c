@@ -39,7 +39,8 @@ typedef enum cli_mode
 {
     CLI_MODE_ECB = 0,
     CLI_MODE_CBC,
-    CLI_MODE_CFB64
+    CLI_MODE_CFB64,
+    CLI_MODE_OFB64
 } cli_mode;
 
 /** @brief Parsed command-line configuration. */
@@ -80,13 +81,13 @@ static void cli_print_usage(FILE *stream)
                   "  cryptomoon-cli <encrypt|decrypt> --algorithm <des|2tdes|3tdes>\n"
                   "      (--key <hex> | --key-file <path>)\n"
                   "      (--input <hex> | --file <path>) [--output <path>]\n"
-"      [--mode <ecb|cbc|cfb64>] [--iv <hex> | --iv-file <path>]\n"
+"      [--mode <ecb|cbc|cfb64|ofb64>] [--iv <hex> | --iv-file <path>]\n"
                    "\n"
                    "Without --output, the result is written as lowercase hex to stdout.\n"
                    "With --output, the result is written as raw bytes to the selected file.\n"
                    "Input must contain complete 8-byte blocks; no padding is applied.\n"
-                   "The default mode is ECB. CBC and CFB64 require an 8-byte initialization\n"
-                   "vector supplied with --iv or --iv-file.\n"
+                   "The default mode is ECB. CBC, CFB64, and OFB64 require an 8-byte\n"
+                   "initialization vector supplied with --iv or --iv-file.\n"
                   "\n"
                   "Warning: DES, TDES, and ECB are obsolete and are provided only for\n"
                   "education and legacy interoperability.\n");
@@ -219,6 +220,11 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
             else if (strcmp(argv[argument_index + 1], "cfb64") == 0)
             {
                 config->mode = CLI_MODE_CFB64;
+                mode_set = 1;
+            }
+            else if (strcmp(argv[argument_index + 1], "ofb64") == 0)
+            {
+                config->mode = CLI_MODE_OFB64;
                 mode_set = 1;
             }
             else
@@ -517,7 +523,7 @@ static int cli_write_block(FILE *output_file, const uint8_t *block)
     return result;
 }
 
-/** @brief Transform and write a single complete block, chaining CBC and CFB64 state implied by the IV. */
+/** @brief Transform and write a single block, chaining CBC, CFB64, and OFB64 state. */
 static int cli_process_block(const cli_config *config, const uint8_t *key, size_t key_size,
                              uint8_t chain[CRYPTO_DES_BLOCK_SIZE], const uint8_t *input,
                              FILE *output_file)
@@ -541,6 +547,12 @@ static int cli_process_block(const cli_config *config, const uint8_t *key, size_
         iv = chain;
         iv_length = CRYPTO_DES_BLOCK_SIZE;
     }
+    else if (config->mode == CLI_MODE_OFB64)
+    {
+        mode = CRYPTO_CIPHER_MODE_OFB64;
+        iv = chain;
+        iv_length = CRYPTO_DES_BLOCK_SIZE;
+    }
     else
     {
         mode = CRYPTO_CIPHER_MODE_ECB;
@@ -548,7 +560,16 @@ static int cli_process_block(const cli_config *config, const uint8_t *key, size_
     status = cli_transform_block(config, key, key_size, mode, iv, iv_length, input, output);
     if (status == CRYPTO_STATUS_OK)
     {
-        if (mode != CRYPTO_CIPHER_MODE_ECB)
+        if (mode == CRYPTO_CIPHER_MODE_OFB64)
+        {
+            size_t byte_index;
+
+            for (byte_index = 0U; byte_index < CRYPTO_DES_BLOCK_SIZE; ++byte_index)
+            {
+                chain[byte_index] = (uint8_t)(input[byte_index] ^ output[byte_index]);
+            }
+        }
+        else if (mode != CRYPTO_CIPHER_MODE_ECB)
         {
             (void)memcpy(chain,
                          (config->operation == CLI_OPERATION_DECRYPT) ? input : output,

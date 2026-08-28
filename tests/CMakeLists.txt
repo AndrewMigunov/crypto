@@ -269,6 +269,64 @@ if(TARGET cryptomoon_cli)
     )
     set_tests_properties(cryptomoon.cli.cfb64-invalid-iv-length PROPERTIES WILL_FAIL TRUE)
 
+    add_test(NAME cryptomoon.cli.des.ofb64.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ofb64
+            --key 0123456789abcdef --iv 1234567890abcdef
+            --input 4e6f77206973207468652074696d6520666f7220616c6c20
+    )
+    set_tests_properties(cryptomoon.cli.des.ofb64.encrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "f3096249c7f46e5135f24a242eeb3d3f3d6d5be3255af8c3"
+    )
+
+    add_test(NAME cryptomoon.cli.des.ofb64.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm des --mode ofb64
+            --key 0123456789abcdef --iv 1234567890abcdef
+            --input f3096249c7f46e5135f24a242eeb3d3f3d6d5be3255af8c3
+    )
+    set_tests_properties(cryptomoon.cli.des.ofb64.decrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "4e6f77206973207468652074696d6520666f7220616c6c20"
+    )
+
+    add_test(NAME cryptomoon.cli.3tdes.ofb64.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm 3tdes --mode ofb64
+            --key 0123456789abcdef23456789abcdef01456789abcdef0123
+            --iv cafebabecafebabe
+            --input fedcba9876543210fedcba9876543210fedcba9876543210
+    )
+    set_tests_properties(cryptomoon.cli.3tdes.ofb64.encrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "431ed7d7f3751929df68b1320a873bb87ced02548fc30058"
+    )
+
+    add_test(NAME cryptomoon.cli.3tdes.ofb64.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm 3tdes --mode ofb64
+            --key 0123456789abcdef23456789abcdef01456789abcdef0123
+            --iv cafebabecafebabe
+            --input 431ed7d7f3751929df68b1320a873bb87ced02548fc30058
+    )
+    set_tests_properties(cryptomoon.cli.3tdes.ofb64.decrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "fedcba9876543210fedcba9876543210fedcba9876543210"
+    )
+
+    add_test(NAME cryptomoon.cli.ofb64-file-round-trip
+        COMMAND ${CMAKE_COMMAND}
+            -DCRYPTOMOON_CLI=$<TARGET_FILE:cryptomoon_cli>
+            -DTEST_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/cli-ofb64-file-test
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_ofb64_file.cmake
+    )
+
+    add_test(NAME cryptomoon.cli.ofb64-without-iv
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ofb64
+            --key 133457799bbcdff1 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.ofb64-without-iv PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.ofb64-invalid-iv-length
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ofb64
+            --key 133457799bbcdff1 --iv 1234 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.ofb64-invalid-iv-length PROPERTIES WILL_FAIL TRUE)
+
     add_test(NAME cryptomoon.cli.unknown-mode
         COMMAND cryptomoon_cli encrypt --algorithm des --mode ctr
             --key 133457799bbcdff1 --input 0123456789abcdef
