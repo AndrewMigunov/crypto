@@ -10,8 +10,9 @@ consumer. The first implementation stage supports:
 - three-key Triple DES (3TDES) using K1, K2, K3;
 - ECB operations over any number of complete blocks;
 - CBC operations over any number of complete blocks using an 8-byte initialization vector;
+- CFB64 operations over any number of complete blocks using an 8-byte initialization vector;
 - no padding;
-- CLI encryption and decryption from hexadecimal text or raw files, in ECB or CBC mode.
+- CLI encryption and decryption from hexadecimal text or raw files, in ECB, CBC, or CFB64 mode.
 
 DES and TDES are obsolete algorithms. Treat this project as an educational and legacy
 interoperability implementation, not as a suitable primitive for new security systems.
@@ -72,8 +73,9 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Validate pointers before using their corresponding lengths or contents.
 - Validate exact key sizes: 8 bytes for DES, 16 bytes for 2TDES, and 24 bytes for 3TDES.
 - Return `CRYPTO_STATUS_INVALID_LENGTH` for an incorrect key size.
-- Validate the initialization vector: CBC accepts exactly `CRYPTO_DES_BLOCK_SIZE` bytes, ECB
-  requires a zero-length IV, and `iv == NULL` with CBC returns `CRYPTO_STATUS_NULL_ARGUMENT`.
+- Validate the initialization vector: CBC and CFB64 accept exactly `CRYPTO_DES_BLOCK_SIZE` bytes,
+  ECB requires a zero-length IV, and `iv == NULL` with a chaining mode returns
+  `CRYPTO_STATUS_NULL_ARGUMENT`.
 - Block byte order follows the DES specification and must not depend on host endianness.
 - In-place block operations are forbidden.
 - Input and output buffers must be distinct and must not overlap.
@@ -176,8 +178,9 @@ ctest --preset coverage
 - Test both static and shared libraries in Debug and Release builds.
 - Use the static library for coverage to avoid conflicting `.gcda` output from the shared object.
 - Maintain tests for:
-  - published DES, 2TDES, and 3TDES known-answer vectors in ECB and CBC modes;
-  - CBC zero-IV equivalence with ECB and initialization-vector validation;
+  - published DES, 2TDES, and 3TDES known-answer vectors in ECB, CBC, and CFB64 modes;
+  - CBC zero-IV equivalence with ECB, CFB64 first-block keystream identity, and
+    initialization-vector validation;
   - encryption/decryption round trips;
   - parity-insensitive DES and TDES encryption and decryption;
   - weak keys and degenerate-key compatibility;
