@@ -324,6 +324,20 @@ static int crypto_des_buffers_overlap(const uint8_t *input, size_t input_length,
     return result;
 }
 
+/** @brief XOR two complete blocks into a bounded destination. */
+static void crypto_des_xor_blocks(uint8_t result[CRYPTO_DES_BLOCK_SIZE],
+                                  const uint8_t left[CRYPTO_DES_BLOCK_SIZE],
+                                  const uint8_t right[CRYPTO_DES_BLOCK_SIZE])
+{
+    size_t index;
+
+    for (index = 0U; index < CRYPTO_DES_BLOCK_SIZE; ++index)
+    {
+        result[index] = (uint8_t)(left[index] ^ right[index]);
+    }
+    return;
+}
+
 static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
                                       crypto_cipher_mode mode, const uint8_t *iv, size_t iv_length,
                                       const uint8_t *input, size_t input_length, uint8_t *output,
@@ -331,19 +345,34 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
 {
     crypto_status status = CRYPTO_STATUS_OK;
     crypto_des_schedule schedule;
+    uint8_t chain[CRYPTO_DES_BLOCK_SIZE];
+    uint8_t scratch[CRYPTO_DES_BLOCK_SIZE];
     size_t block_offset;
 
     crypto_des_secure_zero(&schedule, sizeof(schedule));
+    crypto_des_secure_zero(chain, sizeof(chain));
+    crypto_des_secure_zero(scratch, sizeof(scratch));
     if ((key == NULL) || (input == NULL) || (output == NULL))
     {
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
-    else if (mode != CRYPTO_CIPHER_MODE_ECB)
+    else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (mode != CRYPTO_CIPHER_MODE_CBC))
     {
         status = CRYPTO_STATUS_INVALID_MODE;
     }
-    else if ((iv_length != 0U) || ((input_length % CRYPTO_DES_BLOCK_SIZE) != 0U) ||
-             (output_length != input_length))
+    else if ((mode == CRYPTO_CIPHER_MODE_ECB) && (iv_length != 0U))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if ((mode == CRYPTO_CIPHER_MODE_CBC) && (iv == NULL))
+    {
+        status = CRYPTO_STATUS_NULL_ARGUMENT;
+    }
+    else if ((mode == CRYPTO_CIPHER_MODE_CBC) && (iv_length != CRYPTO_DES_BLOCK_SIZE))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if (((input_length % CRYPTO_DES_BLOCK_SIZE) != 0U) || (output_length != input_length))
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
@@ -356,23 +385,52 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
         status = crypto_des_schedule_init(&schedule, key, key_length);
         if (status == CRYPTO_STATUS_OK)
         {
-            for (block_offset = 0U; block_offset < input_length;
-                 block_offset += CRYPTO_DES_BLOCK_SIZE)
+            if (mode == CRYPTO_CIPHER_MODE_CBC)
             {
+                (void)memcpy(chain, iv, sizeof(chain));
                 if (decrypt == 0)
                 {
-                    crypto_des_schedule_encrypt(&schedule, input + block_offset,
-                                                output + block_offset);
+                    for (block_offset = 0U; block_offset < input_length;
+                         block_offset += CRYPTO_DES_BLOCK_SIZE)
+                    {
+                        crypto_des_xor_blocks(scratch, input + block_offset, chain);
+                        crypto_des_schedule_encrypt(&schedule, scratch, output + block_offset);
+                        (void)memcpy(chain, output + block_offset, sizeof(chain));
+                    }
                 }
                 else
                 {
-                    crypto_des_schedule_decrypt(&schedule, input + block_offset,
-                                                output + block_offset);
+                    for (block_offset = 0U; block_offset < input_length;
+                         block_offset += CRYPTO_DES_BLOCK_SIZE)
+                    {
+                        crypto_des_schedule_decrypt(&schedule, input + block_offset, scratch);
+                        crypto_des_xor_blocks(output + block_offset, scratch, chain);
+                        (void)memcpy(chain, input + block_offset, sizeof(chain));
+                    }
+                }
+            }
+            else
+            {
+                for (block_offset = 0U; block_offset < input_length;
+                     block_offset += CRYPTO_DES_BLOCK_SIZE)
+                {
+                    if (decrypt == 0)
+                    {
+                        crypto_des_schedule_encrypt(&schedule, input + block_offset,
+                                                    output + block_offset);
+                    }
+                    else
+                    {
+                        crypto_des_schedule_decrypt(&schedule, input + block_offset,
+                                                    output + block_offset);
+                    }
                 }
             }
         }
     }
     (void)iv;
+    crypto_des_secure_zero(scratch, sizeof(scratch));
+    crypto_des_secure_zero(chain, sizeof(chain));
     crypto_des_schedule_clear(&schedule);
     return status;
 }

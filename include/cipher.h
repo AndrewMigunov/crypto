@@ -9,7 +9,8 @@
 /** @brief Supported block-cipher modes. */
 typedef enum crypto_cipher_mode
 {
-    CRYPTO_CIPHER_MODE_ECB = 0 /**< Electronic Codebook mode. */
+    CRYPTO_CIPHER_MODE_ECB = 0, /**< Electronic Codebook mode. */
+    CRYPTO_CIPHER_MODE_CBC      /**< Cipher Block Chaining mode. */
 } crypto_cipher_mode;
 
 #endif

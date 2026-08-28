@@ -20,9 +20,11 @@
  * @brief Encrypt complete DES blocks without retaining a public key context.
  * @param key Pointer to the encoded DES key; parity bits are ignored.
  * @param key_length Key length; must equal CRYPTO_DES_KEY_SIZE.
- * @param mode Cipher mode; currently only CRYPTO_CIPHER_MODE_ECB is supported.
- * @param iv Initialization vector; ignored when @p iv_length is zero for ECB.
- * @param iv_length Initialization-vector length; must be zero for ECB.
+ * @param mode Cipher mode; CRYPTO_CIPHER_MODE_ECB or CRYPTO_CIPHER_MODE_CBC.
+ * @param iv Initialization vector; required and 8 bytes long when @p mode is
+ *        CRYPTO_CIPHER_MODE_CBC, ignored when @p mode is CRYPTO_CIPHER_MODE_ECB.
+ * @param iv_length Initialization-vector length; must equal zero for ECB or
+ *        CRYPTO_DES_BLOCK_SIZE for CBC.
  * @param input Pointer to the input blocks.
  * @param input_length Input length; must be a multiple of CRYPTO_DES_BLOCK_SIZE.
  * @param output Pointer to the output blocks; it must not overlap @p input.
@@ -39,9 +41,11 @@ CRYPTO_API crypto_status crypto_des_encrypt(const uint8_t *key, size_t key_lengt
  * @brief Decrypt complete DES blocks without retaining a public key context.
  * @param key Pointer to the encoded DES key; parity bits are ignored.
  * @param key_length Key length; must equal CRYPTO_DES_KEY_SIZE.
- * @param mode Cipher mode; currently only CRYPTO_CIPHER_MODE_ECB is supported.
- * @param iv Initialization vector; ignored when @p iv_length is zero for ECB.
- * @param iv_length Initialization-vector length; must be zero for ECB.
+ * @param mode Cipher mode; CRYPTO_CIPHER_MODE_ECB or CRYPTO_CIPHER_MODE_CBC.
+ * @param iv Initialization vector; required and 8 bytes long when @p mode is
+ *        CRYPTO_CIPHER_MODE_CBC, ignored when @p mode is CRYPTO_CIPHER_MODE_ECB.
+ * @param iv_length Initialization-vector length; must equal zero for ECB or
+ *        CRYPTO_DES_BLOCK_SIZE for CBC.
  * @param input Pointer to the input blocks.
  * @param input_length Input length; must be a multiple of CRYPTO_DES_BLOCK_SIZE.
  * @param output Pointer to the output blocks; it must not overlap @p input.

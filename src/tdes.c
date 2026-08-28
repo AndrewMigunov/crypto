@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "des_internal.h"
 #include "tdes_internal.h"
@@ -133,6 +134,20 @@ static void crypto_tdes_transform(const crypto_des_schedule schedules[3],
     return;
 }
 
+/** @brief XOR two complete blocks into a bounded destination. */
+static void crypto_tdes_xor_blocks(uint8_t result[CRYPTO_DES_BLOCK_SIZE],
+                                   const uint8_t left[CRYPTO_DES_BLOCK_SIZE],
+                                   const uint8_t right[CRYPTO_DES_BLOCK_SIZE])
+{
+    size_t index;
+
+    for (index = 0U; index < CRYPTO_DES_BLOCK_SIZE; ++index)
+    {
+        result[index] = (uint8_t)(left[index] ^ right[index]);
+    }
+    return;
+}
+
 /** @brief Validate arguments and perform a one-shot TDES operation. */
 static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
                                        crypto_cipher_mode mode, const uint8_t *iv, size_t iv_length,
@@ -141,6 +156,8 @@ static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
 {
     crypto_status status = CRYPTO_STATUS_OK;
     crypto_des_schedule schedules[3];
+    uint8_t chain[CRYPTO_DES_BLOCK_SIZE];
+    uint8_t scratch[CRYPTO_DES_BLOCK_SIZE];
     size_t block_offset;
     size_t schedule_index;
 
@@ -148,20 +165,33 @@ static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
     {
         crypto_des_schedule_clear(&schedules[schedule_index]);
     }
+    crypto_tdes_secure_zero(chain, sizeof(chain));
+    crypto_tdes_secure_zero(scratch, sizeof(scratch));
     if ((key == NULL) || (input == NULL) || (output == NULL))
     {
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
-    else if (mode != CRYPTO_CIPHER_MODE_ECB)
+    else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (mode != CRYPTO_CIPHER_MODE_CBC))
     {
         status = CRYPTO_STATUS_INVALID_MODE;
     }
-    else if ((iv_length != 0U) || ((input_length % CRYPTO_DES_BLOCK_SIZE) != 0U) ||
-             (output_length != input_length))
+    else if ((mode == CRYPTO_CIPHER_MODE_ECB) && (iv_length != 0U))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if ((mode == CRYPTO_CIPHER_MODE_CBC) && (iv == NULL))
+    {
+        status = CRYPTO_STATUS_NULL_ARGUMENT;
+    }
+    else if ((mode == CRYPTO_CIPHER_MODE_CBC) && (iv_length != CRYPTO_DES_BLOCK_SIZE))
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
     else if ((key_length != CRYPTO_TDES2_KEY_SIZE) && (key_length != CRYPTO_TDES3_KEY_SIZE))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if (((input_length % CRYPTO_DES_BLOCK_SIZE) != 0U) || (output_length != input_length))
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
@@ -174,15 +204,44 @@ static crypto_status crypto_tdes_crypt(const uint8_t *key, size_t key_length,
         status = crypto_tdes_make_schedules(schedules, key, key_length);
         if (status == CRYPTO_STATUS_OK)
         {
-            for (block_offset = 0U; block_offset < input_length;
-                 block_offset += CRYPTO_DES_BLOCK_SIZE)
+            if (mode == CRYPTO_CIPHER_MODE_CBC)
             {
-                crypto_tdes_transform(schedules, input + block_offset, output + block_offset,
-                                      decrypt);
+                (void)memcpy(chain, iv, sizeof(chain));
+                if (decrypt == 0)
+                {
+                    for (block_offset = 0U; block_offset < input_length;
+                         block_offset += CRYPTO_DES_BLOCK_SIZE)
+                    {
+                        crypto_tdes_xor_blocks(scratch, input + block_offset, chain);
+                        crypto_tdes_transform(schedules, scratch, output + block_offset, 0);
+                        (void)memcpy(chain, output + block_offset, sizeof(chain));
+                    }
+                }
+                else
+                {
+                    for (block_offset = 0U; block_offset < input_length;
+                         block_offset += CRYPTO_DES_BLOCK_SIZE)
+                    {
+                        crypto_tdes_transform(schedules, input + block_offset, scratch, 1);
+                        crypto_tdes_xor_blocks(output + block_offset, scratch, chain);
+                        (void)memcpy(chain, input + block_offset, sizeof(chain));
+                    }
+                }
+            }
+            else
+            {
+                for (block_offset = 0U; block_offset < input_length;
+                     block_offset += CRYPTO_DES_BLOCK_SIZE)
+                {
+                    crypto_tdes_transform(schedules, input + block_offset, output + block_offset,
+                                          decrypt);
+                }
             }
         }
     }
     (void)iv;
+    crypto_tdes_secure_zero(scratch, sizeof(scratch));
+    crypto_tdes_secure_zero(chain, sizeof(chain));
     for (schedule_index = 0U; schedule_index < 3U; ++schedule_index)
     {
         crypto_des_schedule_clear(&schedules[schedule_index]);
