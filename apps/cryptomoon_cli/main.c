@@ -38,7 +38,8 @@ typedef enum cli_algorithm
 typedef enum cli_mode
 {
     CLI_MODE_ECB = 0,
-    CLI_MODE_CBC
+    CLI_MODE_CBC,
+    CLI_MODE_CFB64
 } cli_mode;
 
 /** @brief Parsed command-line configuration. */
@@ -79,13 +80,13 @@ static void cli_print_usage(FILE *stream)
                   "  cryptomoon-cli <encrypt|decrypt> --algorithm <des|2tdes|3tdes>\n"
                   "      (--key <hex> | --key-file <path>)\n"
                   "      (--input <hex> | --file <path>) [--output <path>]\n"
-                  "      [--mode <ecb|cbc>] [--iv <hex> | --iv-file <path>]\n"
-                  "\n"
-                  "Without --output, the result is written as lowercase hex to stdout.\n"
-                  "With --output, the result is written as raw bytes to the selected file.\n"
-                  "Input must contain complete 8-byte blocks; no padding is applied.\n"
-                  "The default mode is ECB. CBC requires a 8-byte initialization vector\n"
-                  "supplied with --iv or --iv-file.\n"
+"      [--mode <ecb|cbc|cfb64>] [--iv <hex> | --iv-file <path>]\n"
+                   "\n"
+                   "Without --output, the result is written as lowercase hex to stdout.\n"
+                   "With --output, the result is written as raw bytes to the selected file.\n"
+                   "Input must contain complete 8-byte blocks; no padding is applied.\n"
+                   "The default mode is ECB. CBC and CFB64 require an 8-byte initialization\n"
+                   "vector supplied with --iv or --iv-file.\n"
                   "\n"
                   "Warning: DES, TDES, and ECB are obsolete and are provided only for\n"
                   "education and legacy interoperability.\n");
@@ -215,6 +216,11 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
                 config->mode = CLI_MODE_CBC;
                 mode_set = 1;
             }
+            else if (strcmp(argv[argument_index + 1], "cfb64") == 0)
+            {
+                config->mode = CLI_MODE_CFB64;
+                mode_set = 1;
+            }
             else
             {
                 result = CLI_EXIT_USAGE;
@@ -261,10 +267,10 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
                                     (config->algorithm == CLI_ALGORITHM_NONE) ||
                                     ((config->mode == CLI_MODE_ECB) &&
                                      ((config->iv_hex != NULL) || (config->iv_path != NULL))) ||
-                                    ((config->mode == CLI_MODE_CBC) &&
+                                    ((config->mode != CLI_MODE_ECB) &&
                                      ((config->iv_hex == NULL) && (config->iv_path == NULL))) ||
-                                    ((config->mode == CLI_MODE_CBC) &&
-                                     (config->iv_hex != NULL) && (config->iv_path != NULL))))
+                                    ((config->mode != CLI_MODE_ECB) && (config->iv_hex != NULL) &&
+                                     (config->iv_path != NULL))))
     {
         result = CLI_EXIT_USAGE;
     }
@@ -450,9 +456,11 @@ static int cli_load_iv(const cli_config *config, uint8_t iv[CRYPTO_DES_BLOCK_SIZ
     return result;
 }
 
-/** @brief Apply the selected library operation to one block in ECB mode. */
+/** @brief Apply the selected library operation to one block with explicit mode and IV. */
 static crypto_status cli_transform_block(const cli_config *config, const uint8_t *key,
-                                         size_t key_size, const uint8_t *input, uint8_t *output)
+                                         size_t key_size, crypto_cipher_mode mode,
+                                         const uint8_t *iv, size_t iv_length, const uint8_t *input,
+                                         uint8_t *output)
 {
     crypto_status status;
 
@@ -460,23 +468,23 @@ static crypto_status cli_transform_block(const cli_config *config, const uint8_t
     {
         if (config->operation == CLI_OPERATION_ENCRYPT)
         {
-            status = crypto_des_encrypt(key, key_size, CRYPTO_CIPHER_MODE_ECB, NULL, 0U, input,
+            status = crypto_des_encrypt(key, key_size, mode, iv, iv_length, input,
                                         CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE);
         }
         else
         {
-            status = crypto_des_decrypt(key, key_size, CRYPTO_CIPHER_MODE_ECB, NULL, 0U, input,
+            status = crypto_des_decrypt(key, key_size, mode, iv, iv_length, input,
                                         CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE);
         }
     }
     else if (config->operation == CLI_OPERATION_ENCRYPT)
     {
-        status = crypto_tdes_encrypt(key, key_size, CRYPTO_CIPHER_MODE_ECB, NULL, 0U, input,
+        status = crypto_tdes_encrypt(key, key_size, mode, iv, iv_length, input,
                                      CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE);
     }
     else
     {
-        status = crypto_tdes_decrypt(key, key_size, CRYPTO_CIPHER_MODE_ECB, NULL, 0U, input,
+        status = crypto_tdes_decrypt(key, key_size, mode, iv, iv_length, input,
                                      CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE);
     }
     return status;
@@ -509,54 +517,43 @@ static int cli_write_block(FILE *output_file, const uint8_t *block)
     return result;
 }
 
-/** @brief XOR two complete blocks into a bounded destination. */
-static void cli_xor_blocks(uint8_t result[CRYPTO_DES_BLOCK_SIZE],
-                           const uint8_t left[CRYPTO_DES_BLOCK_SIZE],
-                           const uint8_t right[CRYPTO_DES_BLOCK_SIZE])
-{
-    size_t byte_index;
-
-    for (byte_index = 0U; byte_index < CRYPTO_DES_BLOCK_SIZE; ++byte_index)
-    {
-        result[byte_index] = (uint8_t)(left[byte_index] ^ right[byte_index]);
-    }
-    return;
-}
-
-/** @brief Transform and write a single complete block, chaining CBC state in the CLI. */
+/** @brief Transform and write a single complete block, chaining CBC and CFB64 state implied by the IV. */
 static int cli_process_block(const cli_config *config, const uint8_t *key, size_t key_size,
                              uint8_t chain[CRYPTO_DES_BLOCK_SIZE], const uint8_t *input,
                              FILE *output_file)
 {
     uint8_t output[CRYPTO_DES_BLOCK_SIZE];
-    uint8_t prepared[CRYPTO_DES_BLOCK_SIZE];
+    crypto_cipher_mode mode;
+    const uint8_t *iv = NULL;
+    size_t iv_length = 0U;
     crypto_status status;
     int result;
 
     if (config->mode == CLI_MODE_CBC)
     {
-        if (config->operation == CLI_OPERATION_ENCRYPT)
-        {
-            cli_xor_blocks(prepared, input, chain);
-            status = cli_transform_block(config, key, key_size, prepared, output);
-            if (status == CRYPTO_STATUS_OK)
-            {
-                (void)memcpy(chain, output, CRYPTO_DES_BLOCK_SIZE);
-            }
-        }
-        else
-        {
-            status = cli_transform_block(config, key, key_size, input, prepared);
-            if (status == CRYPTO_STATUS_OK)
-            {
-                cli_xor_blocks(output, prepared, chain);
-                (void)memcpy(chain, input, CRYPTO_DES_BLOCK_SIZE);
-            }
-        }
+        mode = CRYPTO_CIPHER_MODE_CBC;
+        iv = chain;
+        iv_length = CRYPTO_DES_BLOCK_SIZE;
+    }
+    else if (config->mode == CLI_MODE_CFB64)
+    {
+        mode = CRYPTO_CIPHER_MODE_CFB64;
+        iv = chain;
+        iv_length = CRYPTO_DES_BLOCK_SIZE;
     }
     else
     {
-        status = cli_transform_block(config, key, key_size, input, output);
+        mode = CRYPTO_CIPHER_MODE_ECB;
+    }
+    status = cli_transform_block(config, key, key_size, mode, iv, iv_length, input, output);
+    if (status == CRYPTO_STATUS_OK)
+    {
+        if (mode != CRYPTO_CIPHER_MODE_ECB)
+        {
+            (void)memcpy(chain,
+                         (config->operation == CLI_OPERATION_DECRYPT) ? input : output,
+                         CRYPTO_DES_BLOCK_SIZE);
+        }
     }
     if (status != CRYPTO_STATUS_OK)
     {
@@ -569,7 +566,6 @@ static int cli_process_block(const cli_config *config, const uint8_t *key, size_
         result = cli_write_block(output_file, output);
     }
     cli_secure_zero(output, sizeof(output));
-    cli_secure_zero(prepared, sizeof(prepared));
     return result;
 }
 
@@ -665,7 +661,7 @@ static int cli_execute(const cli_config *config)
     cli_secure_zero(key, sizeof(key));
     cli_secure_zero(chain, sizeof(chain));
     result = cli_load_key(config, key, key_size);
-    if ((result == CLI_EXIT_OK) && (config->mode == CLI_MODE_CBC))
+    if ((result == CLI_EXIT_OK) && (config->mode != CLI_MODE_ECB))
     {
         result = cli_load_iv(config, chain);
     }
