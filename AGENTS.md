@@ -12,9 +12,12 @@ consumer. The first implementation stage supports:
 - CBC operations over any number of complete blocks using an 8-byte initialization vector;
 - CFB64 operations over any number of complete blocks using an 8-byte initialization vector;
 - OFB64 operations over any number of complete blocks using an 8-byte initialization vector;
+- CTR operations over any number of complete blocks using a split nonce/counter block; the 0-7 byte
+  nonce occupies the high bytes and the low `8 - nonce_length` counter bytes increment as a
+  big-endian integer without carrying into the nonce;
 - no padding;
-- CLI encryption and decryption from hexadecimal text or raw files, in ECB, CBC, CFB64, or OFB64
-  mode.
+- CLI encryption and decryption from hexadecimal text or raw files, in ECB, CBC, CFB64, OFB64, or
+  CTR mode.
 
 DES and TDES are obsolete algorithms. Treat this project as an educational and legacy
 interoperability implementation, not as a suitable primitive for new security systems.
@@ -75,9 +78,15 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Validate pointers before using their corresponding lengths or contents.
 - Validate exact key sizes: 8 bytes for DES, 16 bytes for 2TDES, and 24 bytes for 3TDES.
 - Return `CRYPTO_STATUS_INVALID_LENGTH` for an incorrect key size.
-- Validate the initialization vector: CBC and CFB64 accept exactly `CRYPTO_DES_BLOCK_SIZE` bytes,
-  ECB requires a zero-length IV, and `iv == NULL` with a chaining mode returns
+- Validate the initialization vector: CBC, CFB64, OFB64, and CTR accept exactly
+  `CRYPTO_DES_BLOCK_SIZE` bytes, ECB requires a zero-length IV, and `iv == NULL` with a chaining
+  mode returns `CRYPTO_STATUS_NULL_ARGUMENT`. In CTR mode a nonce must be NULL with a zero length
+  except for CTR, and for CTR `nonce_length` must be in the range [0, 7] with an IV length of
+  `CRYPTO_DES_BLOCK_SIZE - nonce_length`; a null nonce with non-zero length returns
   `CRYPTO_STATUS_NULL_ARGUMENT`.
+- Increment the CTR counter block as a big-endian integer over the low `CRYPTO_DES_BLOCK_SIZE -
+  nonce_length` counter bytes for every processed block, without carrying into the nonce. A zero
+  `nonce_length` increments the full block.
 - Block byte order follows the DES specification and must not depend on host endianness.
 - In-place block operations are forbidden.
 - Input and output buffers must be distinct and must not overlap.
@@ -119,6 +128,12 @@ interoperability implementation, not as a suitable primitive for new security sy
 - Apply project warning flags only to repository-owned targets, not to external consumers.
 - GCC warnings are errors. Preserve the strict warning set in
   `cmake/modules/CompilerWarnings.cmake`.
+
+## Temporary files
+
+- Create scratch, generated, and diagnostic files only under the project `build/` directory.
+- Never create temporary files in the repository root or outside the project.
+- Remove leftover temporary files before committing.
 
 ## Git commits
 
