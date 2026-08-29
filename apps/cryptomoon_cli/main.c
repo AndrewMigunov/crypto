@@ -40,7 +40,8 @@ typedef enum cli_mode
     CLI_MODE_ECB = 0,
     CLI_MODE_CBC,
     CLI_MODE_CFB64,
-    CLI_MODE_OFB64
+    CLI_MODE_OFB64,
+    CLI_MODE_CTR
 } cli_mode;
 
 /** @brief Parsed command-line configuration. */
@@ -53,6 +54,7 @@ typedef struct cli_config
     const char *key_path;
     const char *iv_hex;
     const char *iv_path;
+    const char *nonce_hex;
     const char *input_hex;
     const char *input_path;
     const char *output_path;
@@ -71,6 +73,23 @@ static void cli_secure_zero(void *memory, size_t size)
     return;
 }
 
+/** @brief Increment the low bytes of a CTR counter block as a big-endian integer. */
+static void cli_counter_increment(uint8_t counter[CRYPTO_DES_BLOCK_SIZE], size_t counter_length)
+{
+    size_t index;
+
+    /** Counter part is the low bytes of the big-endian block; carry stops at the nonce. */
+    for (index = CRYPTO_DES_BLOCK_SIZE; index > (CRYPTO_DES_BLOCK_SIZE - counter_length); --index)
+    {
+        counter[index - 1U] = (uint8_t)(counter[index - 1U] + UINT8_C(1));
+        if (counter[index - 1U] != 0U)
+        {
+            break;
+        }
+    }
+    return;
+}
+
 /** @brief Print command usage to the selected stream. */
 static void cli_print_usage(FILE *stream)
 {
@@ -81,13 +100,17 @@ static void cli_print_usage(FILE *stream)
                   "  cryptomoon-cli <encrypt|decrypt> --algorithm <des|2tdes|3tdes>\n"
                   "      (--key <hex> | --key-file <path>)\n"
                   "      (--input <hex> | --file <path>) [--output <path>]\n"
-"      [--mode <ecb|cbc|cfb64|ofb64>] [--iv <hex> | --iv-file <path>]\n"
-                   "\n"
-                   "Without --output, the result is written as lowercase hex to stdout.\n"
-                   "With --output, the result is written as raw bytes to the selected file.\n"
-                   "Input must contain complete 8-byte blocks; no padding is applied.\n"
-                   "The default mode is ECB. CBC, CFB64, and OFB64 require an 8-byte\n"
-                   "initialization vector supplied with --iv or --iv-file.\n"
+                  "      [--mode <ecb|cbc|cfb64|ofb64|ctr>] [--iv <hex> | --iv-file <path>]\n"
+                  "      [--nonce <hex>]\n"
+                  "\n"
+                  "Without --output, the result is written as lowercase hex to stdout.\n"
+                  "With --output, the result is written as raw bytes to the selected file.\n"
+                  "Input must contain complete 8-byte blocks; no padding is applied.\n"
+                  "The default mode is ECB. CBC, CFB64, OFB64, and CTR require an 8-byte\n"
+                  "initialization vector supplied with --iv or --iv-file.\n"
+                  "In CTR mode, --nonce (0-7 bytes) occupies the high bytes of the counter\n"
+                  "block and is only valid with --mode ctr; --iv supplies the initial counter\n"
+                  "value (the low bytes).\n"
                   "\n"
                   "Warning: DES, TDES, and ECB are obsolete and are provided only for\n"
                   "education and legacy interoperability.\n");
@@ -227,6 +250,11 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
                 config->mode = CLI_MODE_OFB64;
                 mode_set = 1;
             }
+            else if (strcmp(argv[argument_index + 1], "ctr") == 0)
+            {
+                config->mode = CLI_MODE_CTR;
+                mode_set = 1;
+            }
             else
             {
                 result = CLI_EXIT_USAGE;
@@ -239,6 +267,10 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
         else if (strcmp(option, "--iv-file") == 0)
         {
             result = cli_set_option(&config->iv_path, argv[argument_index + 1]);
+        }
+        else if (strcmp(option, "--nonce") == 0)
+        {
+            result = cli_set_option(&config->nonce_hex, argv[argument_index + 1]);
         }
         else if (strcmp(option, "--key") == 0)
         {
@@ -275,9 +307,19 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
                                      ((config->iv_hex != NULL) || (config->iv_path != NULL))) ||
                                     ((config->mode != CLI_MODE_ECB) &&
                                      ((config->iv_hex == NULL) && (config->iv_path == NULL))) ||
-                                    ((config->mode != CLI_MODE_ECB) && (config->iv_hex != NULL) &&
-                                     (config->iv_path != NULL))))
+                                     ((config->mode != CLI_MODE_ECB) && (config->iv_hex != NULL) &&
+                                     (config->iv_path != NULL)) ||
+                                     ((config->mode != CLI_MODE_CTR) &&
+                                      (config->nonce_hex != NULL))))
     {
+        result = CLI_EXIT_USAGE;
+    }
+    if ((result == CLI_EXIT_OK) && (config->nonce_hex != NULL) &&
+        (((strlen(config->nonce_hex) % 2U) != 0U) ||
+         (strlen(config->nonce_hex) > (2U * (CRYPTO_DES_BLOCK_SIZE - 1U)))))
+    {
+        (void)fprintf(stderr,
+                      "cryptomoon-cli: --nonce must be 0-7 bytes of hexadecimal text\n");
         result = CLI_EXIT_USAGE;
     }
     if ((result == CLI_EXIT_OK) && (config->output_path != NULL) &&
@@ -408,24 +450,39 @@ static int cli_load_key(const cli_config *config, uint8_t *key, size_t key_size)
 }
 
 /** @brief Load an 8-byte initialization vector from hex or a raw iv file. */
-static int cli_load_iv(const cli_config *config, uint8_t iv[CRYPTO_DES_BLOCK_SIZE])
+/** @brief Return the CTR nonce length in bytes, or zero without a nonce. */
+static size_t cli_nonce_length(const cli_config *config)
+{
+    size_t length = 0U;
+
+    if (config->nonce_hex != NULL)
+    {
+        length = strlen(config->nonce_hex) / 2U;
+    }
+    return length;
+}
+
+/** @brief Load the initialization vector into the low bytes of a block. */
+static int cli_load_iv(const cli_config *config, uint8_t *iv, size_t iv_length)
 {
     int result = CLI_EXIT_OK;
 
     if (config->iv_hex != NULL)
     {
-        if (strlen(config->iv_hex) != (2U * CRYPTO_DES_BLOCK_SIZE))
+        if (strlen(config->iv_hex) != (2U * iv_length))
         {
             result = CLI_EXIT_USAGE;
         }
         else
         {
-            result = cli_decode_hex(config->iv_hex, CRYPTO_DES_BLOCK_SIZE, iv);
+            result = cli_decode_hex(config->iv_hex, iv_length, iv);
         }
     }
     else
     {
         FILE *iv_file = fopen(config->iv_path, "rb");
+        size_t bytes_read;
+        int extra_byte;
 
         if (iv_file == NULL)
         {
@@ -434,8 +491,8 @@ static int cli_load_iv(const cli_config *config, uint8_t iv[CRYPTO_DES_BLOCK_SIZ
         }
         else
         {
-            size_t bytes_read = fread(iv, 1U, CRYPTO_DES_BLOCK_SIZE, iv_file);
-            int extra_byte = fgetc(iv_file);
+            bytes_read = fread(iv, 1U, iv_length, iv_file);
+            extra_byte = fgetc(iv_file);
 
             if (ferror(iv_file) != 0)
             {
@@ -443,7 +500,7 @@ static int cli_load_iv(const cli_config *config, uint8_t iv[CRYPTO_DES_BLOCK_SIZ
                               config->iv_path);
                 result = CLI_EXIT_IO;
             }
-            else if ((bytes_read != CRYPTO_DES_BLOCK_SIZE) || (extra_byte != EOF))
+            else if ((bytes_read != iv_length) || (extra_byte != EOF))
             {
                 result = CLI_EXIT_USAGE;
             }
@@ -462,11 +519,28 @@ static int cli_load_iv(const cli_config *config, uint8_t iv[CRYPTO_DES_BLOCK_SIZ
     return result;
 }
 
+/** @brief Load a CTR nonce into the high bytes of a counter block. */
+static int cli_load_nonce(const cli_config *config, uint8_t *nonce)
+{
+    int result = CLI_EXIT_OK;
+
+    if (config->nonce_hex != NULL)
+    {
+        result = cli_decode_hex(config->nonce_hex, cli_nonce_length(config), nonce);
+    }
+    if (result == CLI_EXIT_USAGE)
+    {
+        (void)fprintf(stderr, "cryptomoon-cli: nonce has an invalid encoding or length\n");
+    }
+    return result;
+}
+
 /** @brief Apply the selected library operation to one block with explicit mode and IV. */
 static crypto_status cli_transform_block(const cli_config *config, const uint8_t *key,
                                          size_t key_size, crypto_cipher_mode mode,
-                                         const uint8_t *iv, size_t iv_length, const uint8_t *input,
-                                         uint8_t *output)
+                                         const uint8_t *iv, size_t iv_length,
+                                         const uint8_t *nonce, size_t nonce_length,
+                                         const uint8_t *input, uint8_t *output)
 {
     crypto_status status;
 
@@ -474,24 +548,28 @@ static crypto_status cli_transform_block(const cli_config *config, const uint8_t
     {
         if (config->operation == CLI_OPERATION_ENCRYPT)
         {
-            status = crypto_des_encrypt(key, key_size, mode, iv, iv_length, input,
-                                        CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE);
+            status = crypto_des_encrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length,
+                                        input, CRYPTO_DES_BLOCK_SIZE, output,
+                                        CRYPTO_DES_BLOCK_SIZE);
         }
         else
         {
-            status = crypto_des_decrypt(key, key_size, mode, iv, iv_length, input,
-                                        CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE);
+            status = crypto_des_decrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length,
+                                        input, CRYPTO_DES_BLOCK_SIZE, output,
+                                        CRYPTO_DES_BLOCK_SIZE);
         }
     }
     else if (config->operation == CLI_OPERATION_ENCRYPT)
     {
-        status = crypto_tdes_encrypt(key, key_size, mode, iv, iv_length, input,
-                                     CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE);
+        status = crypto_tdes_encrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length,
+                                     input, CRYPTO_DES_BLOCK_SIZE, output,
+                                     CRYPTO_DES_BLOCK_SIZE);
     }
     else
     {
-        status = crypto_tdes_decrypt(key, key_size, mode, iv, iv_length, input,
-                                     CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE);
+        status = crypto_tdes_decrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length,
+                                     input, CRYPTO_DES_BLOCK_SIZE, output,
+                                     CRYPTO_DES_BLOCK_SIZE);
     }
     return status;
 }
@@ -523,7 +601,7 @@ static int cli_write_block(FILE *output_file, const uint8_t *block)
     return result;
 }
 
-/** @brief Transform and write a single block, chaining CBC, CFB64, and OFB64 state. */
+/** @brief Transform and write a single block, chaining block-mode state. */
 static int cli_process_block(const cli_config *config, const uint8_t *key, size_t key_size,
                              uint8_t chain[CRYPTO_DES_BLOCK_SIZE], const uint8_t *input,
                              FILE *output_file)
@@ -553,14 +631,27 @@ static int cli_process_block(const cli_config *config, const uint8_t *key, size_
         iv = chain;
         iv_length = CRYPTO_DES_BLOCK_SIZE;
     }
+    else if (config->mode == CLI_MODE_CTR)
+    {
+        mode = CRYPTO_CIPHER_MODE_CTR;
+        iv = chain + cli_nonce_length(config);
+        iv_length = CRYPTO_DES_BLOCK_SIZE - cli_nonce_length(config);
+    }
     else
     {
         mode = CRYPTO_CIPHER_MODE_ECB;
     }
-    status = cli_transform_block(config, key, key_size, mode, iv, iv_length, input, output);
+    status = cli_transform_block(config, key, key_size, mode, iv, iv_length,
+                                 (mode == CRYPTO_CIPHER_MODE_CTR) ? chain : NULL,
+                                 (mode == CRYPTO_CIPHER_MODE_CTR) ? cli_nonce_length(config) : 0U,
+                                 input, output);
     if (status == CRYPTO_STATUS_OK)
     {
-        if (mode == CRYPTO_CIPHER_MODE_OFB64)
+        if (mode == CRYPTO_CIPHER_MODE_CTR)
+        {
+            cli_counter_increment(chain, CRYPTO_DES_BLOCK_SIZE - cli_nonce_length(config));
+        }
+        else if (mode == CRYPTO_CIPHER_MODE_OFB64)
         {
             size_t byte_index;
 
@@ -684,7 +775,15 @@ static int cli_execute(const cli_config *config)
     result = cli_load_key(config, key, key_size);
     if ((result == CLI_EXIT_OK) && (config->mode != CLI_MODE_ECB))
     {
-        result = cli_load_iv(config, chain);
+        if (config->mode == CLI_MODE_CTR)
+        {
+            result = cli_load_nonce(config, chain);
+        }
+        if (result == CLI_EXIT_OK)
+        {
+            result = cli_load_iv(config, chain + cli_nonce_length(config),
+                                 CRYPTO_DES_BLOCK_SIZE - cli_nonce_length(config));
+        }
     }
     if ((result == CLI_EXIT_OK) && (config->output_path != NULL))
     {

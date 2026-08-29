@@ -327,8 +327,112 @@ if(TARGET cryptomoon_cli)
     )
     set_tests_properties(cryptomoon.cli.ofb64-invalid-iv-length PROPERTIES WILL_FAIL TRUE)
 
-    add_test(NAME cryptomoon.cli.unknown-mode
+    add_test(NAME cryptomoon.cli.des.ctr.encrypt
         COMMAND cryptomoon_cli encrypt --algorithm des --mode ctr
+            --key 0123456789abcdef --iv 1234567890abcdef
+            --input 4e6f77206973207468652074696d6520666f7220616c6c20
+    )
+    set_tests_properties(cryptomoon.cli.des.ctr.encrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "f3096249c7f46e51163a8ca0ffc94c27fa2f80f480b86f75"
+    )
+
+    add_test(NAME cryptomoon.cli.des.ctr.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm des --mode ctr
+            --key 0123456789abcdef --iv 1234567890abcdef
+            --input f3096249c7f46e51163a8ca0ffc94c27fa2f80f480b86f75
+    )
+    set_tests_properties(cryptomoon.cli.des.ctr.decrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "4e6f77206973207468652074696d6520666f7220616c6c20"
+    )
+
+    add_test(NAME cryptomoon.cli.3tdes.ctr.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm 3tdes --mode ctr
+            --key 0123456789abcdef23456789abcdef01456789abcdef0123
+            --iv cafebabecafebabe
+            --input fedcba9876543210fedcba9876543210fedcba9876543210
+    )
+    set_tests_properties(cryptomoon.cli.3tdes.ctr.encrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "431ed7d7f3751929e09853650c90bc1e4214753a4fa53ea1"
+    )
+
+    add_test(NAME cryptomoon.cli.3tdes.ctr.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm 3tdes --mode ctr
+            --key 0123456789abcdef23456789abcdef01456789abcdef0123
+            --iv cafebabecafebabe
+            --input 431ed7d7f3751929e09853650c90bc1e4214753a4fa53ea1
+    )
+    set_tests_properties(cryptomoon.cli.3tdes.ctr.decrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "fedcba9876543210fedcba9876543210fedcba9876543210"
+    )
+
+    add_test(NAME cryptomoon.cli.ctr-file-round-trip
+        COMMAND ${CMAKE_COMMAND}
+            -DCRYPTOMOON_CLI=$<TARGET_FILE:cryptomoon_cli>
+            -DTEST_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/cli-ctr-file-test
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_ctr_file.cmake
+    )
+
+    add_test(NAME cryptomoon.cli.des.ctr.nonce.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ctr
+            --key 0123456789abcdef --nonce 0000 --iv fffffffffffe
+            --input 4e6f77206973207468652074696d6520666f7220616c6c20
+    )
+    set_tests_properties(cryptomoon.cli.des.ctr.nonce.encrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "0df648fb5f918c48ae3a748571ea23e2b3bb3dd74104512d"
+    )
+
+    add_test(NAME cryptomoon.cli.des.ctr.nonce.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm des --mode ctr
+            --key 0123456789abcdef --nonce 0000 --iv fffffffffffe
+            --input 0df648fb5f918c48ae3a748571ea23e2b3bb3dd74104512d
+    )
+    set_tests_properties(cryptomoon.cli.des.ctr.nonce.decrypt PROPERTIES
+        PASS_REGULAR_EXPRESSION "4e6f77206973207468652074696d6520666f7220616c6c20"
+    )
+
+    add_test(NAME cryptomoon.cli.ctr-nonce-file-round-trip
+        COMMAND ${CMAKE_COMMAND}
+            -DCRYPTOMOON_CLI=$<TARGET_FILE:cryptomoon_cli>
+            -DTEST_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/cli-ctr-nonce-file-test
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_ctr_nonce_file.cmake
+    )
+
+    add_test(NAME cryptomoon.cli.ctr-nonce-in-ecb
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ecb
+            --key 133457799bbcdff1 --nonce 0000 --iv fffffffffffe
+            --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.ctr-nonce-in-ecb PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.ctr-nonce-too-long
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ctr
+            --key 133457799bbcdff1 --nonce 00000000000000 --iv ffffeffe
+            --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.ctr-nonce-too-long PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.ctr-nonce-bad-total-length
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ctr
+            --key 133457799bbcdff1 --nonce 0000 --iv ffff
+            --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.ctr-nonce-bad-total-length PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.ctr-without-iv
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ctr
+            --key 133457799bbcdff1 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.ctr-without-iv PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.ctr-invalid-iv-length
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode ctr
+            --key 133457799bbcdff1 --iv 1234 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.ctr-invalid-iv-length PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.unknown-mode
+        COMMAND cryptomoon_cli encrypt --algorithm des --mode foo
             --key 133457799bbcdff1 --input 0123456789abcdef
     )
     set_tests_properties(cryptomoon.cli.unknown-mode PROPERTIES WILL_FAIL TRUE)
