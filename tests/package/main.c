@@ -15,8 +15,8 @@ int main(void)
     crypto_status status;
     int result = 1;
 
-    status = crypto_des_encrypt(key, sizeof(key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, plaintext,
-                                sizeof(plaintext), output, sizeof(output));
+    status = crypto_des_encrypt(key, sizeof(key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U,
+                                plaintext, sizeof(plaintext), output, sizeof(output));
     if ((status == CRYPTO_STATUS_OK) && (memcmp(output, expected, sizeof(output)) == 0) &&
         (strcmp(crypto_version(), CRYPTOMOON_VERSION) == 0) &&
         (strcmp(crypto_full_version(), CRYPTOMOON_FULL_VERSION) == 0))

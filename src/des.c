@@ -338,8 +338,27 @@ static void crypto_des_xor_blocks(uint8_t result[CRYPTO_DES_BLOCK_SIZE],
     return;
 }
 
+/** @brief Increment the low bytes of a CTR counter block as a big-endian integer. */
+static void crypto_des_counter_increment(uint8_t counter[CRYPTO_DES_BLOCK_SIZE],
+                                         size_t counter_length)
+{
+    size_t index;
+
+    /** Counter part is the low bytes of the big-endian block; carry stops at the nonce. */
+    for (index = CRYPTO_DES_BLOCK_SIZE; index > (CRYPTO_DES_BLOCK_SIZE - counter_length); --index)
+    {
+        counter[index - 1U] = (uint8_t)(counter[index - 1U] + UINT8_C(1));
+        if (counter[index - 1U] != 0U)
+        {
+            break;
+        }
+    }
+    return;
+}
+
 static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
                                       crypto_cipher_mode mode, const uint8_t *iv, size_t iv_length,
+                                      const uint8_t *nonce, size_t nonce_length,
                                       const uint8_t *input, size_t input_length, uint8_t *output,
                                       size_t output_length, int decrypt)
 {
@@ -348,6 +367,7 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
     uint8_t chain[CRYPTO_DES_BLOCK_SIZE];
     uint8_t scratch[CRYPTO_DES_BLOCK_SIZE];
     size_t block_offset;
+    size_t nonce_index;
 
     crypto_des_secure_zero(&schedule, sizeof(schedule));
     crypto_des_secure_zero(chain, sizeof(chain));
@@ -357,11 +377,31 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
     else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (mode != CRYPTO_CIPHER_MODE_CBC) &&
-             (mode != CRYPTO_CIPHER_MODE_CFB64) && (mode != CRYPTO_CIPHER_MODE_OFB64))
+             (mode != CRYPTO_CIPHER_MODE_CFB64) && (mode != CRYPTO_CIPHER_MODE_OFB64) &&
+             (mode != CRYPTO_CIPHER_MODE_CTR))
     {
         status = CRYPTO_STATUS_INVALID_MODE;
     }
+    else if ((mode != CRYPTO_CIPHER_MODE_CTR) && (nonce_length != 0U))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if ((nonce_length != 0U) && (nonce == NULL))
+    {
+        status = CRYPTO_STATUS_NULL_ARGUMENT;
+    }
+    else if ((mode != CRYPTO_CIPHER_MODE_CTR) && (iv_length != 0U) &&
+             (iv_length != CRYPTO_DES_BLOCK_SIZE))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
     else if ((mode == CRYPTO_CIPHER_MODE_ECB) && (iv_length != 0U))
+    {
+        status = CRYPTO_STATUS_INVALID_LENGTH;
+    }
+    else if ((mode == CRYPTO_CIPHER_MODE_CTR) &&
+             ((nonce_length > CRYPTO_DES_BLOCK_SIZE) ||
+              (iv_length != (CRYPTO_DES_BLOCK_SIZE - nonce_length))))
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
@@ -369,7 +409,8 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
     {
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
-    else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (iv_length != CRYPTO_DES_BLOCK_SIZE))
+    else if ((mode != CRYPTO_CIPHER_MODE_ECB) && (mode != CRYPTO_CIPHER_MODE_CTR) &&
+             (iv_length != CRYPTO_DES_BLOCK_SIZE))
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
@@ -388,7 +429,18 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
         {
             if (mode != CRYPTO_CIPHER_MODE_ECB)
             {
-                (void)memcpy(chain, iv, sizeof(chain));
+                if (mode == CRYPTO_CIPHER_MODE_CTR)
+                {
+                    (void)memcpy(chain + nonce_length, iv, CRYPTO_DES_BLOCK_SIZE - nonce_length);
+                    for (nonce_index = 0U; nonce_index < nonce_length; ++nonce_index)
+                    {
+                        chain[nonce_index] = nonce[nonce_index];
+                    }
+                }
+                else
+                {
+                    (void)memcpy(chain, iv, sizeof(chain));
+                }
                 if (mode == CRYPTO_CIPHER_MODE_CFB64)
                 {
                     for (block_offset = 0U; block_offset < input_length;
@@ -414,6 +466,17 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
                         crypto_des_schedule_encrypt(&schedule, chain, scratch);
                         crypto_des_xor_blocks(output + block_offset, input + block_offset, scratch);
                         (void)memcpy(chain, scratch, sizeof(chain));
+                    }
+                }
+                else if (mode == CRYPTO_CIPHER_MODE_CTR)
+                {
+                    /** Encryption and decryption both encrypt a full-block counter. */
+                    for (block_offset = 0U; block_offset < input_length;
+                         block_offset += CRYPTO_DES_BLOCK_SIZE)
+                    {
+                        crypto_des_schedule_encrypt(&schedule, chain, scratch);
+                        crypto_des_xor_blocks(output + block_offset, input + block_offset, scratch);
+                        crypto_des_counter_increment(chain, CRYPTO_DES_BLOCK_SIZE - nonce_length);
                     }
                 }
                 else if (decrypt == 0)
@@ -457,6 +520,7 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
         }
     }
     (void)iv;
+    (void)nonce;
     crypto_des_secure_zero(scratch, sizeof(scratch));
     crypto_des_secure_zero(chain, sizeof(chain));
     crypto_des_schedule_clear(&schedule);
@@ -464,17 +528,19 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
 }
 
 crypto_status crypto_des_encrypt(const uint8_t *key, size_t key_length, crypto_cipher_mode mode,
-                                 const uint8_t *iv, size_t iv_length, const uint8_t *input,
-                                 size_t input_length, uint8_t *output, size_t output_length)
+                                 const uint8_t *iv, size_t iv_length, const uint8_t *nonce,
+                                 size_t nonce_length, const uint8_t *input, size_t input_length,
+                                 uint8_t *output, size_t output_length)
 {
-    return crypto_des_crypt(key, key_length, mode, iv, iv_length, input, input_length, output,
-                            output_length, 0);
+    return crypto_des_crypt(key, key_length, mode, iv, iv_length, nonce, nonce_length, input,
+                            input_length, output, output_length, 0);
 }
 
 crypto_status crypto_des_decrypt(const uint8_t *key, size_t key_length, crypto_cipher_mode mode,
-                                 const uint8_t *iv, size_t iv_length, const uint8_t *input,
-                                 size_t input_length, uint8_t *output, size_t output_length)
+                                 const uint8_t *iv, size_t iv_length, const uint8_t *nonce,
+                                 size_t nonce_length, const uint8_t *input, size_t input_length,
+                                 uint8_t *output, size_t output_length)
 {
-    return crypto_des_crypt(key, key_length, mode, iv, iv_length, input, input_length, output,
-                            output_length, 1);
+    return crypto_des_crypt(key, key_length, mode, iv, iv_length, nonce, nonce_length, input,
+                            input_length, output, output_length, 1);
 }
