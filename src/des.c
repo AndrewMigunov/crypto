@@ -360,7 +360,7 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
                                       crypto_cipher_mode mode, const uint8_t *iv, size_t iv_length,
                                       const uint8_t *nonce, size_t nonce_length,
                                       const uint8_t *input, size_t input_length, uint8_t *output,
-                                      size_t output_length, int decrypt)
+                                      size_t *output_length, int decrypt)
 {
     crypto_status status = CRYPTO_STATUS_OK;
     crypto_des_schedule schedule;
@@ -372,7 +372,7 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
     crypto_des_secure_zero(&schedule, sizeof(schedule));
     crypto_des_secure_zero(chain, sizeof(chain));
     crypto_des_secure_zero(scratch, sizeof(scratch));
-    if ((key == NULL) || (input == NULL) || (output == NULL))
+    if ((key == NULL) || (input == NULL) || (output == NULL) || (output_length == NULL))
     {
         status = CRYPTO_STATUS_NULL_ARGUMENT;
     }
@@ -414,11 +414,11 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
-    else if (((input_length % CRYPTO_DES_BLOCK_SIZE) != 0U) || (output_length != input_length))
+    else if (((input_length % CRYPTO_DES_BLOCK_SIZE) != 0U) || (*output_length < input_length))
     {
         status = CRYPTO_STATUS_INVALID_LENGTH;
     }
-    else if (crypto_des_buffers_overlap(input, input_length, output, output_length) != 0)
+    else if (crypto_des_buffers_overlap(input, input_length, output, input_length) != 0)
     {
         status = CRYPTO_STATUS_OVERLAPPING_BUFFERS;
     }
@@ -521,6 +521,10 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
     }
     (void)iv;
     (void)nonce;
+    if (status == CRYPTO_STATUS_OK)
+    {
+        *output_length = input_length;
+    }
     crypto_des_secure_zero(scratch, sizeof(scratch));
     crypto_des_secure_zero(chain, sizeof(chain));
     crypto_des_schedule_clear(&schedule);
@@ -530,7 +534,7 @@ static crypto_status crypto_des_crypt(const uint8_t *key, size_t key_length,
 crypto_status crypto_des_encrypt(const uint8_t *key, size_t key_length, crypto_cipher_mode mode,
                                  const uint8_t *iv, size_t iv_length, const uint8_t *nonce,
                                  size_t nonce_length, const uint8_t *input, size_t input_length,
-                                 uint8_t *output, size_t output_length)
+                                 uint8_t *output, size_t *output_length)
 {
     return crypto_des_crypt(key, key_length, mode, iv, iv_length, nonce, nonce_length, input,
                             input_length, output, output_length, 0);
@@ -539,7 +543,7 @@ crypto_status crypto_des_encrypt(const uint8_t *key, size_t key_length, crypto_c
 crypto_status crypto_des_decrypt(const uint8_t *key, size_t key_length, crypto_cipher_mode mode,
                                  const uint8_t *iv, size_t iv_length, const uint8_t *nonce,
                                  size_t nonce_length, const uint8_t *input, size_t input_length,
-                                 uint8_t *output, size_t output_length)
+                                 uint8_t *output, size_t *output_length)
 {
     return crypto_des_crypt(key, key_length, mode, iv, iv_length, nonce, nonce_length, input,
                             input_length, output, output_length, 1);

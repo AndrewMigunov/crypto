@@ -12,12 +12,14 @@ int main(void)
     static const uint8_t expected[CRYPTO_DES_BLOCK_SIZE] = {0x85, 0xe8, 0x13, 0x54,
                                                             0x0f, 0x0a, 0xb4, 0x05};
     uint8_t output[CRYPTO_DES_BLOCK_SIZE];
+    size_t output_length = sizeof(output);
     crypto_status status;
     int result = 1;
 
     status = crypto_des_encrypt(key, sizeof(key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U,
-                                plaintext, sizeof(plaintext), output, sizeof(output));
-    if ((status == CRYPTO_STATUS_OK) && (memcmp(output, expected, sizeof(output)) == 0) &&
+                                plaintext, sizeof(plaintext), output, &output_length);
+    if ((status == CRYPTO_STATUS_OK) && (output_length == sizeof(output)) &&
+        (memcmp(output, expected, sizeof(output)) == 0) &&
         (strcmp(crypto_version(), CRYPTOMOON_VERSION) == 0) &&
         (strcmp(crypto_full_version(), CRYPTOMOON_FULL_VERSION) == 0))
     {

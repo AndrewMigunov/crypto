@@ -72,8 +72,15 @@ interoperability implementation, not as a suitable primitive for new security sy
       const uint8_t *input,
       size_t input_length,
       uint8_t *output,
-      size_t output_length);
+      size_t *output_length);
   ```
+
+- The `output_length` parameter is an in/out value. On input `*output_length` is the capacity of
+  `@p output` in bytes and must be at least `input_length`; a larger buffer is allowed. On success
+  the library stores the number of bytes actually written, which equals `input_length`, and leaves
+  the value unchanged on any error return. A NULL `output_length` returns
+  `CRYPTO_STATUS_NULL_ARGUMENT`. Overlap detection covers only the `input_length` output bytes
+  this call actually writes.
 
 - Validate pointers before using their corresponding lengths or contents.
 - Validate exact key sizes: 8 bytes for DES, 16 bytes for 2TDES, and 24 bytes for 3TDES.

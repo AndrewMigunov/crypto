@@ -298,19 +298,19 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
         }
         argument_index += 2;
     }
-    if ((result == CLI_EXIT_OK) && (((config->key_hex == NULL) && (config->key_path == NULL)) ||
-                                    ((config->key_hex != NULL) && (config->key_path != NULL)) ||
-                                    ((config->input_hex == NULL) && (config->input_path == NULL)) ||
-                                    ((config->input_hex != NULL) && (config->input_path != NULL)) ||
-                                    (config->algorithm == CLI_ALGORITHM_NONE) ||
-                                    ((config->mode == CLI_MODE_ECB) &&
-                                     ((config->iv_hex != NULL) || (config->iv_path != NULL))) ||
-                                    ((config->mode != CLI_MODE_ECB) &&
-                                     ((config->iv_hex == NULL) && (config->iv_path == NULL))) ||
-                                     ((config->mode != CLI_MODE_ECB) && (config->iv_hex != NULL) &&
-                                     (config->iv_path != NULL)) ||
-                                     ((config->mode != CLI_MODE_CTR) &&
-                                      (config->nonce_hex != NULL))))
+    if ((result == CLI_EXIT_OK) &&
+        (((config->key_hex == NULL) && (config->key_path == NULL)) ||
+         ((config->key_hex != NULL) && (config->key_path != NULL)) ||
+         ((config->input_hex == NULL) && (config->input_path == NULL)) ||
+         ((config->input_hex != NULL) && (config->input_path != NULL)) ||
+         (config->algorithm == CLI_ALGORITHM_NONE) ||
+         ((config->mode == CLI_MODE_ECB) &&
+          ((config->iv_hex != NULL) || (config->iv_path != NULL))) ||
+         ((config->mode != CLI_MODE_ECB) &&
+          ((config->iv_hex == NULL) && (config->iv_path == NULL))) ||
+         ((config->mode != CLI_MODE_ECB) && (config->iv_hex != NULL) &&
+          (config->iv_path != NULL)) ||
+         ((config->mode != CLI_MODE_CTR) && (config->nonce_hex != NULL))))
     {
         result = CLI_EXIT_USAGE;
     }
@@ -318,8 +318,7 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
         (((strlen(config->nonce_hex) % 2U) != 0U) ||
          (strlen(config->nonce_hex) > (2U * (CRYPTO_DES_BLOCK_SIZE - 1U)))))
     {
-        (void)fprintf(stderr,
-                      "cryptomoon-cli: --nonce must be 0-7 bytes of hexadecimal text\n");
+        (void)fprintf(stderr, "cryptomoon-cli: --nonce must be 0-7 bytes of hexadecimal text\n");
         result = CLI_EXIT_USAGE;
     }
     if ((result == CLI_EXIT_OK) && (config->output_path != NULL) &&
@@ -538,38 +537,34 @@ static int cli_load_nonce(const cli_config *config, uint8_t *nonce)
 /** @brief Apply the selected library operation to one block with explicit mode and IV. */
 static crypto_status cli_transform_block(const cli_config *config, const uint8_t *key,
                                          size_t key_size, crypto_cipher_mode mode,
-                                         const uint8_t *iv, size_t iv_length,
-                                         const uint8_t *nonce, size_t nonce_length,
-                                         const uint8_t *input, uint8_t *output)
+                                         const uint8_t *iv, size_t iv_length, const uint8_t *nonce,
+                                         size_t nonce_length, const uint8_t *input, uint8_t *output)
 {
     crypto_status status;
+    size_t output_length = CRYPTO_DES_BLOCK_SIZE;
 
     if (config->algorithm == CLI_ALGORITHM_DES)
     {
         if (config->operation == CLI_OPERATION_ENCRYPT)
         {
             status = crypto_des_encrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length,
-                                        input, CRYPTO_DES_BLOCK_SIZE, output,
-                                        CRYPTO_DES_BLOCK_SIZE);
+                                        input, CRYPTO_DES_BLOCK_SIZE, output, &output_length);
         }
         else
         {
             status = crypto_des_decrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length,
-                                        input, CRYPTO_DES_BLOCK_SIZE, output,
-                                        CRYPTO_DES_BLOCK_SIZE);
+                                        input, CRYPTO_DES_BLOCK_SIZE, output, &output_length);
         }
     }
     else if (config->operation == CLI_OPERATION_ENCRYPT)
     {
-        status = crypto_tdes_encrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length,
-                                     input, CRYPTO_DES_BLOCK_SIZE, output,
-                                     CRYPTO_DES_BLOCK_SIZE);
+        status = crypto_tdes_encrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length, input,
+                                     CRYPTO_DES_BLOCK_SIZE, output, &output_length);
     }
     else
     {
-        status = crypto_tdes_decrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length,
-                                     input, CRYPTO_DES_BLOCK_SIZE, output,
-                                     CRYPTO_DES_BLOCK_SIZE);
+        status = crypto_tdes_decrypt(key, key_size, mode, iv, iv_length, nonce, nonce_length, input,
+                                     CRYPTO_DES_BLOCK_SIZE, output, &output_length);
     }
     return status;
 }
@@ -641,10 +636,9 @@ static int cli_process_block(const cli_config *config, const uint8_t *key, size_
     {
         mode = CRYPTO_CIPHER_MODE_ECB;
     }
-    status = cli_transform_block(config, key, key_size, mode, iv, iv_length,
-                                 (mode == CRYPTO_CIPHER_MODE_CTR) ? chain : NULL,
-                                 (mode == CRYPTO_CIPHER_MODE_CTR) ? cli_nonce_length(config) : 0U,
-                                 input, output);
+    status = cli_transform_block(
+        config, key, key_size, mode, iv, iv_length, (mode == CRYPTO_CIPHER_MODE_CTR) ? chain : NULL,
+        (mode == CRYPTO_CIPHER_MODE_CTR) ? cli_nonce_length(config) : 0U, input, output);
     if (status == CRYPTO_STATUS_OK)
     {
         if (mode == CRYPTO_CIPHER_MODE_CTR)
@@ -662,8 +656,7 @@ static int cli_process_block(const cli_config *config, const uint8_t *key, size_
         }
         else if (mode != CRYPTO_CIPHER_MODE_ECB)
         {
-            (void)memcpy(chain,
-                         (config->operation == CLI_OPERATION_DECRYPT) ? input : output,
+            (void)memcpy(chain, (config->operation == CLI_OPERATION_DECRYPT) ? input : output,
                          CRYPTO_DES_BLOCK_SIZE);
         }
     }

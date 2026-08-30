@@ -15,7 +15,7 @@ typedef crypto_status (*cipher_operation)(const uint8_t *key, size_t key_length,
                                           size_t iv_length, const uint8_t *nonce,
                                           size_t nonce_length, const uint8_t *input,
                                           size_t input_length, uint8_t *output,
-                                          size_t output_length);
+                                          size_t *output_length);
 
 /** @brief Known-answer vector for a one-shot block cipher. */
 typedef struct cipher_vector
@@ -54,22 +54,22 @@ typedef struct contract_case
     const uint8_t *input;       /**< Input argument. */
     size_t input_length;        /**< Input-length argument. */
     uint8_t *output;            /**< Output argument. */
-    size_t output_length;       /**< Output-length argument. */
+    size_t output_length;       /**< Output-capacity argument in bytes. */
     crypto_status expected;     /**< Expected operation status. */
 } contract_case;
 
 /** @brief Known-answer vector for a one-shot block-chaining operation. */
 typedef struct mode_vector
 {
-    const char *name;           /**< Name shown by the test runner. */
-    cipher_operation encrypt;   /**< Encryption operation. */
-    cipher_operation decrypt;   /**< Decryption operation. */
-    const uint8_t *key;         /**< Encoded key. */
-    size_t key_length;          /**< Encoded key length. */
-    const uint8_t *iv;          /**< Initialization vector. */
-    const uint8_t *plaintext;   /**< Expected plaintext blocks. */
-    size_t plaintext_length;    /**< Plaintext length in bytes. */
-    const uint8_t *ciphertext;  /**< Expected ciphertext blocks. */
+    const char *name;          /**< Name shown by the test runner. */
+    cipher_operation encrypt;  /**< Encryption operation. */
+    cipher_operation decrypt;  /**< Decryption operation. */
+    const uint8_t *key;        /**< Encoded key. */
+    size_t key_length;         /**< Encoded key length. */
+    const uint8_t *iv;         /**< Initialization vector. */
+    const uint8_t *plaintext;  /**< Expected plaintext blocks. */
+    size_t plaintext_length;   /**< Plaintext length in bytes. */
+    const uint8_t *ciphertext; /**< Expected ciphertext blocks. */
 } mode_vector;
 
 /** @brief Canonical DES key with valid odd parity. */
@@ -114,8 +114,7 @@ static const uint8_t des_even_parity[CRYPTO_DES_KEY_SIZE] = {0x12, 0x35, 0x56, 0
 
 /** @brief Two-key TDES bundle with every encoded parity bit inverted. */
 static const uint8_t tdes2_even_parity[CRYPTO_TDES2_KEY_SIZE] = {
-    0x00, 0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee,
-    0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee, 0x00};
+    0x00, 0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee, 0x22, 0x44, 0x66, 0x88, 0xaa, 0xcc, 0xee, 0x00};
 
 /** @brief Three-key TDES bundle with every encoded parity bit inverted. */
 static const uint8_t tdes3_even_parity[CRYPTO_TDES3_KEY_SIZE] = {
@@ -230,7 +229,8 @@ static const uint8_t tdes3_ctr_nonce[3U] = {0x00, 0x00, 0x11};
 /** @brief Three-key TDES CTR initial counter supplied as the low counter-block bytes. */
 static const uint8_t tdes3_ctr_initial[5U] = {0xff, 0xff, 0xff, 0xff, 0xfe};
 
-/** @brief Three-key TDES CTR ciphertext with a nonce generated against an independent implementation. */
+/** @brief Three-key TDES CTR ciphertext with a nonce generated against an independent
+ * implementation. */
 static const uint8_t tdes3_ctr_nonce_ciphertext[3U * CRYPTO_DES_BLOCK_SIZE] = {
     0x0a, 0x11, 0xf8, 0x4b, 0x52, 0xf0, 0x86, 0x84, 0x60, 0x24, 0xaa, 0xbd,
     0xf7, 0x87, 0x1f, 0xcd, 0xd2, 0xa7, 0x77, 0xbd, 0x74, 0xac, 0xdd, 0x61};
@@ -253,6 +253,25 @@ static void check_block(const uint8_t actual[CRYPTO_DES_BLOCK_SIZE],
     return;
 }
 
+/** @brief Run an operation and verify that the written length matches the input. */
+static crypto_status invoke_operation(cipher_operation operation, const uint8_t *key,
+                                      size_t key_length, crypto_cipher_mode mode, const uint8_t *iv,
+                                      size_t iv_length, const uint8_t *nonce, size_t nonce_length,
+                                      const uint8_t *input, size_t input_length, uint8_t *output,
+                                      size_t output_capacity)
+{
+    crypto_status status;
+    size_t output_length = output_capacity;
+
+    status = operation(key, key_length, mode, iv, iv_length, nonce, nonce_length, input,
+                       input_length, output, &output_length);
+    if (status == CRYPTO_STATUS_OK)
+    {
+        TEST_CHECK(output_length == input_length);
+    }
+    return status;
+}
+
 /** @brief Exercise DES, two-key TDES, and three-key TDES known-answer vectors. */
 static void test_known_answer_vectors(void)
 {
@@ -273,15 +292,14 @@ static void test_known_answer_vectors(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status =
-            vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                            NULL, 0U, vector->plaintext, CRYPTO_DES_BLOCK_SIZE, encrypted,
-                            sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, vector->plaintext,
+                                  CRYPTO_DES_BLOCK_SIZE, encrypted, sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         check_block(encrypted, vector->ciphertext);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                 NULL, 0U, encrypted, sizeof(encrypted), decrypted,
-                                 sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, encrypted,
+                                  sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         check_block(decrypted, vector->plaintext);
     }
@@ -314,14 +332,14 @@ static void test_multiple_blocks(void)
         memcpy(plaintext + CRYPTO_DES_BLOCK_SIZE, vector->plaintext, CRYPTO_DES_BLOCK_SIZE);
         memcpy(expected, vector->ciphertext, CRYPTO_DES_BLOCK_SIZE);
         memcpy(expected + CRYPTO_DES_BLOCK_SIZE, vector->ciphertext, CRYPTO_DES_BLOCK_SIZE);
-        status = vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                 NULL, 0U, plaintext, sizeof(plaintext), encrypted,
-                                 sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, plaintext,
+                                  sizeof(plaintext), encrypted, sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, expected, sizeof(expected)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                 NULL, 0U, encrypted, sizeof(encrypted), decrypted,
-                                 sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, encrypted,
+                                  sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, plaintext, sizeof(plaintext)) == 0);
     }
@@ -348,15 +366,14 @@ static void test_parity_ignored(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status =
-            vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                            NULL, 0U, vector->plaintext, CRYPTO_DES_BLOCK_SIZE, encrypted,
-                            sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, vector->plaintext,
+                                  CRYPTO_DES_BLOCK_SIZE, encrypted, sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         check_block(encrypted, vector->ciphertext);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                 NULL, 0U, vector->ciphertext, CRYPTO_DES_BLOCK_SIZE, decrypted,
-                                 sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, vector->ciphertext,
+                                  CRYPTO_DES_BLOCK_SIZE, decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         check_block(decrypted, vector->plaintext);
     }
@@ -383,15 +400,15 @@ static void test_cbc_known_answer_vectors(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status =
-            vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CBC, vector->iv,
-                            CRYPTO_DES_BLOCK_SIZE, NULL, 0U, vector->plaintext,
-                            vector->plaintext_length, encrypted, sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CBC, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, vector->plaintext, vector->plaintext_length, encrypted,
+                                  sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, vector->ciphertext, sizeof(encrypted)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CBC,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, encrypted,
-                                 sizeof(encrypted), decrypted, sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CBC, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, vector->plaintext, sizeof(decrypted)) == 0);
     }
@@ -421,15 +438,15 @@ static void test_cbc_parity_ignored(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status =
-            vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CBC, vector->iv,
-                            CRYPTO_DES_BLOCK_SIZE, NULL, 0U, vector->plaintext,
-                            vector->plaintext_length, encrypted, sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CBC, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, vector->plaintext, vector->plaintext_length, encrypted,
+                                  sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, vector->ciphertext, sizeof(encrypted)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CBC,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, encrypted,
-                                 sizeof(encrypted), decrypted, sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CBC, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, vector->plaintext, sizeof(decrypted)) == 0);
     }
@@ -459,14 +476,15 @@ static void test_cfb64_parity_ignored(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status = vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CFB64,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, vector->plaintext,
-                                 vector->plaintext_length, encrypted, sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CFB64, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, vector->plaintext, vector->plaintext_length, encrypted,
+                                  sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, vector->ciphertext, sizeof(encrypted)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CFB64,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, encrypted,
-                                 sizeof(encrypted), decrypted, sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CFB64, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, vector->plaintext, sizeof(decrypted)) == 0);
     }
@@ -493,14 +511,15 @@ static void test_cfb64_known_answer_vectors(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status = vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CFB64,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, vector->plaintext,
-                                 vector->plaintext_length, encrypted, sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CFB64, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, vector->plaintext, vector->plaintext_length, encrypted,
+                                  sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, vector->ciphertext, sizeof(encrypted)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CFB64,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, encrypted,
-                                 sizeof(encrypted), decrypted, sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CFB64, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, vector->plaintext, sizeof(decrypted)) == 0);
     }
@@ -516,17 +535,17 @@ static void test_cfb64_first_block_identity(void)
     crypto_status status;
     size_t index;
 
-    status = crypto_des_encrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                NULL, 0U, des_cbc_iv, sizeof(des_cbc_iv), keystream,
-                                sizeof(keystream));
+    status = invoke_operation(crypto_des_encrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, des_cbc_iv,
+                              sizeof(des_cbc_iv), keystream, sizeof(keystream));
     check_status(status, CRYPTO_STATUS_OK);
     for (index = 0U; index < CRYPTO_DES_BLOCK_SIZE; ++index)
     {
         expected[index] = (uint8_t)(des_cbc_plaintext[index] ^ keystream[index]);
     }
-    status = crypto_des_encrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_CFB64,
-                                des_cbc_iv, sizeof(des_cbc_iv), NULL, 0U, des_cbc_plaintext,
-                                CRYPTO_DES_BLOCK_SIZE, actual, sizeof(actual));
+    status = invoke_operation(crypto_des_encrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_CFB64, des_cbc_iv, sizeof(des_cbc_iv), NULL, 0U,
+                              des_cbc_plaintext, CRYPTO_DES_BLOCK_SIZE, actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(actual, expected);
     return;
@@ -541,17 +560,17 @@ static void test_ofb64_first_block_identity(void)
     crypto_status status;
     size_t index;
 
-    status = crypto_des_encrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                NULL, 0U, des_cbc_iv, sizeof(des_cbc_iv), keystream,
-                                sizeof(keystream));
+    status = invoke_operation(crypto_des_encrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, des_cbc_iv,
+                              sizeof(des_cbc_iv), keystream, sizeof(keystream));
     check_status(status, CRYPTO_STATUS_OK);
     for (index = 0U; index < CRYPTO_DES_BLOCK_SIZE; ++index)
     {
         expected[index] = (uint8_t)(des_cbc_plaintext[index] ^ keystream[index]);
     }
-    status = crypto_des_encrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_OFB64,
-                                des_cbc_iv, sizeof(des_cbc_iv), NULL, 0U, des_cbc_plaintext,
-                                CRYPTO_DES_BLOCK_SIZE, actual, sizeof(actual));
+    status = invoke_operation(crypto_des_encrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_OFB64, des_cbc_iv, sizeof(des_cbc_iv), NULL, 0U,
+                              des_cbc_plaintext, CRYPTO_DES_BLOCK_SIZE, actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(actual, expected);
     return;
@@ -577,14 +596,15 @@ static void test_ofb64_known_answer_vectors(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status = vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_OFB64,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, vector->plaintext,
-                                 vector->plaintext_length, encrypted, sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_OFB64, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, vector->plaintext, vector->plaintext_length, encrypted,
+                                  sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, vector->ciphertext, sizeof(encrypted)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_OFB64,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, encrypted,
-                                 sizeof(encrypted), decrypted, sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_OFB64, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, vector->plaintext, sizeof(decrypted)) == 0);
     }
@@ -614,14 +634,15 @@ static void test_ofb64_parity_ignored(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status = vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_OFB64,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, vector->plaintext,
-                                 vector->plaintext_length, encrypted, sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_OFB64, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, vector->plaintext, vector->plaintext_length, encrypted,
+                                  sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, vector->ciphertext, sizeof(encrypted)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_OFB64,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, encrypted,
-                                 sizeof(encrypted), decrypted, sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_OFB64, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, vector->plaintext, sizeof(decrypted)) == 0);
     }
@@ -648,14 +669,15 @@ static void test_ctr_known_answer_vectors(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status = vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CTR,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, vector->plaintext,
-                                 vector->plaintext_length, encrypted, sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CTR, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, vector->plaintext, vector->plaintext_length, encrypted,
+                                  sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, vector->ciphertext, sizeof(encrypted)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CTR,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, encrypted,
-                                 sizeof(encrypted), decrypted, sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CTR, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, vector->plaintext, sizeof(decrypted)) == 0);
     }
@@ -685,14 +707,15 @@ static void test_ctr_parity_ignored(void)
     {
         vector = &vectors[index];
         TEST_CASE(vector->name);
-        status = vector->encrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CTR,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, vector->plaintext,
-                                 vector->plaintext_length, encrypted, sizeof(encrypted));
+        status = invoke_operation(vector->encrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CTR, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, vector->plaintext, vector->plaintext_length, encrypted,
+                                  sizeof(encrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(encrypted, vector->ciphertext, sizeof(encrypted)) == 0);
-        status = vector->decrypt(vector->key, vector->key_length, CRYPTO_CIPHER_MODE_CTR,
-                                 vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, encrypted,
-                                 sizeof(encrypted), decrypted, sizeof(decrypted));
+        status = invoke_operation(vector->decrypt, vector->key, vector->key_length,
+                                  CRYPTO_CIPHER_MODE_CTR, vector->iv, CRYPTO_DES_BLOCK_SIZE, NULL,
+                                  0U, encrypted, sizeof(encrypted), decrypted, sizeof(decrypted));
         check_status(status, CRYPTO_STATUS_OK);
         TEST_CHECK(memcmp(decrypted, vector->plaintext, sizeof(decrypted)) == 0);
     }
@@ -708,17 +731,17 @@ static void test_ctr_first_block_identity(void)
     crypto_status status;
     size_t index;
 
-    status = crypto_des_encrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                NULL, 0U, des_cbc_iv, sizeof(des_cbc_iv), keystream,
-                                sizeof(keystream));
+    status = invoke_operation(crypto_des_encrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, des_cbc_iv,
+                              sizeof(des_cbc_iv), keystream, sizeof(keystream));
     check_status(status, CRYPTO_STATUS_OK);
     for (index = 0U; index < CRYPTO_DES_BLOCK_SIZE; ++index)
     {
         expected[index] = (uint8_t)(des_cbc_plaintext[index] ^ keystream[index]);
     }
-    status = crypto_des_encrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_CTR,
-                                des_cbc_iv, sizeof(des_cbc_iv), NULL, 0U, des_cbc_plaintext,
-                                CRYPTO_DES_BLOCK_SIZE, actual, sizeof(actual));
+    status = invoke_operation(crypto_des_encrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_CTR, des_cbc_iv, sizeof(des_cbc_iv), NULL, 0U,
+                              des_cbc_plaintext, CRYPTO_DES_BLOCK_SIZE, actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(actual, expected);
     return;
@@ -732,9 +755,9 @@ static void test_ctr_all_zero_plaintext(void)
     crypto_status status;
 
     TEST_CASE("DES/triple-block-keystream");
-    status = crypto_des_encrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_CTR,
-                                des_cbc_iv, sizeof(des_cbc_iv), NULL, 0U, zero_plaintext,
-                                sizeof(zero_plaintext), actual, sizeof(actual));
+    status = invoke_operation(crypto_des_encrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_CTR, des_cbc_iv, sizeof(des_cbc_iv), NULL, 0U,
+                              zero_plaintext, sizeof(zero_plaintext), actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     TEST_CHECK(memcmp(actual, des_ctr_keystream, sizeof(actual)) == 0);
     return;
@@ -749,30 +772,30 @@ static void test_ctr_nonce_known_answer_vectors(void)
     crypto_status status;
 
     TEST_CASE("DES/nonce-counter-carry");
-    status = crypto_des_encrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_CTR,
-                                des_ctr_initial, sizeof(des_ctr_initial), des_ctr_nonce,
-                                sizeof(des_ctr_nonce), zero_plaintext, sizeof(zero_plaintext),
-                                encrypted, sizeof(encrypted));
+    status = invoke_operation(crypto_des_encrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_CTR, des_ctr_initial, sizeof(des_ctr_initial),
+                              des_ctr_nonce, sizeof(des_ctr_nonce), zero_plaintext,
+                              sizeof(zero_plaintext), encrypted, sizeof(encrypted));
     check_status(status, CRYPTO_STATUS_OK);
     TEST_CHECK(memcmp(encrypted, des_ctr_nonce_ciphertext, sizeof(encrypted)) == 0);
-    status = crypto_des_decrypt(des_cbc_key, sizeof(des_cbc_key), CRYPTO_CIPHER_MODE_CTR,
-                                des_ctr_initial, sizeof(des_ctr_initial), des_ctr_nonce,
-                                sizeof(des_ctr_nonce), encrypted, sizeof(encrypted), decrypted,
-                                sizeof(decrypted));
+    status = invoke_operation(crypto_des_decrypt, des_cbc_key, sizeof(des_cbc_key),
+                              CRYPTO_CIPHER_MODE_CTR, des_ctr_initial, sizeof(des_ctr_initial),
+                              des_ctr_nonce, sizeof(des_ctr_nonce), encrypted, sizeof(encrypted),
+                              decrypted, sizeof(decrypted));
     check_status(status, CRYPTO_STATUS_OK);
     TEST_CHECK(memcmp(decrypted, zero_plaintext, sizeof(decrypted)) == 0);
 
     TEST_CASE("3TDES/nonce-counter-carry");
-    status = crypto_tdes_encrypt(tdes3_key, sizeof(tdes3_key), CRYPTO_CIPHER_MODE_CTR,
-                                 tdes3_ctr_initial, sizeof(tdes3_ctr_initial), tdes3_ctr_nonce,
-                                 sizeof(tdes3_ctr_nonce), zero_plaintext, sizeof(zero_plaintext),
-                                 encrypted, sizeof(encrypted));
+    status = invoke_operation(crypto_tdes_encrypt, tdes3_key, sizeof(tdes3_key),
+                              CRYPTO_CIPHER_MODE_CTR, tdes3_ctr_initial, sizeof(tdes3_ctr_initial),
+                              tdes3_ctr_nonce, sizeof(tdes3_ctr_nonce), zero_plaintext,
+                              sizeof(zero_plaintext), encrypted, sizeof(encrypted));
     check_status(status, CRYPTO_STATUS_OK);
     TEST_CHECK(memcmp(encrypted, tdes3_ctr_nonce_ciphertext, sizeof(encrypted)) == 0);
-    status = crypto_tdes_decrypt(tdes3_key, sizeof(tdes3_key), CRYPTO_CIPHER_MODE_CTR,
-                                 tdes3_ctr_initial, sizeof(tdes3_ctr_initial), tdes3_ctr_nonce,
-                                 sizeof(tdes3_ctr_nonce), encrypted, sizeof(encrypted), decrypted,
-                                 sizeof(decrypted));
+    status = invoke_operation(crypto_tdes_decrypt, tdes3_key, sizeof(tdes3_key),
+                              CRYPTO_CIPHER_MODE_CTR, tdes3_ctr_initial, sizeof(tdes3_ctr_initial),
+                              tdes3_ctr_nonce, sizeof(tdes3_ctr_nonce), encrypted,
+                              sizeof(encrypted), decrypted, sizeof(decrypted));
     check_status(status, CRYPTO_STATUS_OK);
     TEST_CHECK(memcmp(decrypted, zero_plaintext, sizeof(decrypted)) == 0);
     return;
@@ -786,23 +809,24 @@ static void test_cbc_zero_iv_equals_ecb(void)
     uint8_t cbc_output[CRYPTO_DES_BLOCK_SIZE] = {0};
     crypto_status status;
 
-    status = crypto_des_encrypt(des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                NULL, 0U, des_plaintext, sizeof(des_plaintext), ecb_output,
-                                sizeof(ecb_output));
+    status = invoke_operation(crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB,
+                              NULL, 0U, NULL, 0U, des_plaintext, sizeof(des_plaintext), ecb_output,
+                              sizeof(ecb_output));
     check_status(status, CRYPTO_STATUS_OK);
-    status = crypto_des_encrypt(des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_CBC, zero_iv,
-                                sizeof(zero_iv), NULL, 0U, des_plaintext, sizeof(des_plaintext),
-                                cbc_output, sizeof(cbc_output));
+    status = invoke_operation(crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_CBC,
+                              zero_iv, sizeof(zero_iv), NULL, 0U, des_plaintext,
+                              sizeof(des_plaintext), cbc_output, sizeof(cbc_output));
     check_status(status, CRYPTO_STATUS_OK);
     TEST_CHECK(memcmp(ecb_output, cbc_output, CRYPTO_DES_BLOCK_SIZE) == 0);
 
-    status = crypto_tdes_encrypt(tdes3_key, sizeof(tdes3_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                 NULL, 0U, tdes_plaintext, sizeof(tdes_plaintext), ecb_output,
-                                 sizeof(ecb_output));
+    status = invoke_operation(crypto_tdes_encrypt, tdes3_key, sizeof(tdes3_key),
+                              CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, tdes_plaintext,
+                              sizeof(tdes_plaintext), ecb_output, sizeof(ecb_output));
     check_status(status, CRYPTO_STATUS_OK);
-    status = crypto_tdes_encrypt(tdes3_key, sizeof(tdes3_key), CRYPTO_CIPHER_MODE_CBC, zero_iv,
-                                 sizeof(zero_iv), NULL, 0U, tdes_plaintext, sizeof(tdes_plaintext),
-                                 cbc_output, sizeof(cbc_output));
+    status =
+        invoke_operation(crypto_tdes_encrypt, tdes3_key, sizeof(tdes3_key), CRYPTO_CIPHER_MODE_CBC,
+                         zero_iv, sizeof(zero_iv), NULL, 0U, tdes_plaintext, sizeof(tdes_plaintext),
+                         cbc_output, sizeof(cbc_output));
     check_status(status, CRYPTO_STATUS_OK);
     TEST_CHECK(memcmp(ecb_output, cbc_output, CRYPTO_DES_BLOCK_SIZE) == 0);
     return;
@@ -820,78 +844,74 @@ static void check_degenerate_tdes_case(const uint8_t *tdes_key, size_t tdes_key_
     uint8_t decrypted[CRYPTO_DES_BLOCK_SIZE] = {0};
     crypto_status status;
 
-    status =
-        equivalent_operation(equivalent_key, equivalent_key_length, CRYPTO_CIPHER_MODE_ECB, NULL,
-                             0U, NULL, 0U, zero_block, sizeof(zero_block), expected,
-                             sizeof(expected));
+    status = invoke_operation(equivalent_operation, equivalent_key, equivalent_key_length,
+                              CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, zero_block,
+                              sizeof(zero_block), expected, sizeof(expected));
     check_status(status, CRYPTO_STATUS_OK);
-    status = crypto_tdes_encrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                 NULL, 0U, zero_block, sizeof(zero_block), actual,
-                                 sizeof(actual));
+    status = invoke_operation(crypto_tdes_encrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, zero_block,
+                              sizeof(zero_block), actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(actual, expected);
-    status = crypto_tdes_decrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
-                                 NULL, 0U, actual, sizeof(actual), decrypted, sizeof(decrypted));
+    status =
+        invoke_operation(crypto_tdes_decrypt, tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_ECB,
+                         NULL, 0U, NULL, 0U, actual, sizeof(actual), decrypted, sizeof(decrypted));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(decrypted, zero_block);
-    status =
-        equivalent_operation(equivalent_key, equivalent_key_length, CRYPTO_CIPHER_MODE_CBC, iv,
-                             sizeof(iv), NULL, 0U, zero_block, sizeof(zero_block), expected,
-                             sizeof(expected));
+    status = invoke_operation(equivalent_operation, equivalent_key, equivalent_key_length,
+                              CRYPTO_CIPHER_MODE_CBC, iv, sizeof(iv), NULL, 0U, zero_block,
+                              sizeof(zero_block), expected, sizeof(expected));
     check_status(status, CRYPTO_STATUS_OK);
-    status = crypto_tdes_encrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_CBC, iv,
-                                 sizeof(iv), NULL, 0U, zero_block, sizeof(zero_block), actual,
-                                 sizeof(actual));
+    status = invoke_operation(crypto_tdes_encrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_CBC, iv, sizeof(iv), NULL, 0U, zero_block,
+                              sizeof(zero_block), actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(actual, expected);
-    status = crypto_tdes_decrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_CBC, iv,
-                                 sizeof(iv), NULL, 0U, actual, sizeof(actual), decrypted,
-                                 sizeof(decrypted));
+    status = invoke_operation(crypto_tdes_decrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_CBC, iv, sizeof(iv), NULL, 0U, actual,
+                              sizeof(actual), decrypted, sizeof(decrypted));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(decrypted, zero_block);
-    status =
-        equivalent_operation(equivalent_key, equivalent_key_length, CRYPTO_CIPHER_MODE_CFB64, iv,
-                             sizeof(iv), NULL, 0U, zero_block, sizeof(zero_block), expected,
-                             sizeof(expected));
+    status = invoke_operation(equivalent_operation, equivalent_key, equivalent_key_length,
+                              CRYPTO_CIPHER_MODE_CFB64, iv, sizeof(iv), NULL, 0U, zero_block,
+                              sizeof(zero_block), expected, sizeof(expected));
     check_status(status, CRYPTO_STATUS_OK);
-    status = crypto_tdes_encrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_CFB64, iv,
-                                 sizeof(iv), NULL, 0U, zero_block, sizeof(zero_block), actual,
-                                 sizeof(actual));
+    status = invoke_operation(crypto_tdes_encrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_CFB64, iv, sizeof(iv), NULL, 0U, zero_block,
+                              sizeof(zero_block), actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(actual, expected);
-    status = crypto_tdes_decrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_CFB64, iv,
-                                 sizeof(iv), NULL, 0U, actual, sizeof(actual), decrypted,
-                                 sizeof(decrypted));
+    status = invoke_operation(crypto_tdes_decrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_CFB64, iv, sizeof(iv), NULL, 0U, actual,
+                              sizeof(actual), decrypted, sizeof(decrypted));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(decrypted, zero_block);
-    status =
-        equivalent_operation(equivalent_key, equivalent_key_length, CRYPTO_CIPHER_MODE_OFB64, iv,
-                             sizeof(iv), NULL, 0U, zero_block, sizeof(zero_block), expected,
-                             sizeof(expected));
+    status = invoke_operation(equivalent_operation, equivalent_key, equivalent_key_length,
+                              CRYPTO_CIPHER_MODE_OFB64, iv, sizeof(iv), NULL, 0U, zero_block,
+                              sizeof(zero_block), expected, sizeof(expected));
     check_status(status, CRYPTO_STATUS_OK);
-    status = crypto_tdes_encrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_OFB64, iv,
-                                 sizeof(iv), NULL, 0U, zero_block, sizeof(zero_block), actual,
-                                 sizeof(actual));
+    status = invoke_operation(crypto_tdes_encrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_OFB64, iv, sizeof(iv), NULL, 0U, zero_block,
+                              sizeof(zero_block), actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(actual, expected);
-    status = crypto_tdes_decrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_OFB64, iv,
-                                 sizeof(iv), NULL, 0U, actual, sizeof(actual), decrypted,
-                                 sizeof(decrypted));
+    status = invoke_operation(crypto_tdes_decrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_OFB64, iv, sizeof(iv), NULL, 0U, actual,
+                              sizeof(actual), decrypted, sizeof(decrypted));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(decrypted, zero_block);
-    status =
-        equivalent_operation(equivalent_key, equivalent_key_length, CRYPTO_CIPHER_MODE_CTR, iv,
-                             sizeof(iv), NULL, 0U, zero_block, sizeof(zero_block), expected,
-                             sizeof(expected));
+    status = invoke_operation(equivalent_operation, equivalent_key, equivalent_key_length,
+                              CRYPTO_CIPHER_MODE_CTR, iv, sizeof(iv), NULL, 0U, zero_block,
+                              sizeof(zero_block), expected, sizeof(expected));
     check_status(status, CRYPTO_STATUS_OK);
-    status = crypto_tdes_encrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_CTR, iv,
-                                 sizeof(iv), NULL, 0U, zero_block, sizeof(zero_block), actual,
-                                 sizeof(actual));
+    status = invoke_operation(crypto_tdes_encrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_CTR, iv, sizeof(iv), NULL, 0U, zero_block,
+                              sizeof(zero_block), actual, sizeof(actual));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(actual, expected);
-    status = crypto_tdes_decrypt(tdes_key, tdes_key_length, CRYPTO_CIPHER_MODE_CTR, iv,
-                                 sizeof(iv), NULL, 0U, actual, sizeof(actual), decrypted,
-                                 sizeof(decrypted));
+    status = invoke_operation(crypto_tdes_decrypt, tdes_key, tdes_key_length,
+                              CRYPTO_CIPHER_MODE_CTR, iv, sizeof(iv), NULL, 0U, actual,
+                              sizeof(actual), decrypted, sizeof(decrypted));
     check_status(status, CRYPTO_STATUS_OK);
     check_block(decrypted, zero_block);
     return;
@@ -953,10 +973,9 @@ static void test_key_validation(void)
     {
         test_case = &cases[index];
         TEST_CASE(test_case->name);
-        status =
-            test_case->operation(test_case->key, test_case->key_length, CRYPTO_CIPHER_MODE_ECB,
-                                 NULL, 0U, NULL, 0U, zero_block, sizeof(zero_block), output,
-                                 sizeof(output));
+        status = invoke_operation(test_case->operation, test_case->key, test_case->key_length,
+                                  CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, zero_block,
+                                  sizeof(zero_block), output, sizeof(output));
         check_status(status, test_case->expected);
     }
     return;
@@ -986,9 +1005,9 @@ static void test_public_contract(void)
         {"DES/invalid-input-length", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE - 1U, output,
          CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
-        {"DES/invalid-output-length", crypto_des_encrypt, des_key, sizeof(des_key),
+        {"DES/larger-output-length", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
-         (2U * CRYPTO_DES_BLOCK_SIZE), CRYPTO_STATUS_INVALID_LENGTH},
+         (2U * CRYPTO_DES_BLOCK_SIZE), CRYPTO_STATUS_OK},
         {"DES/invalid-key-length", crypto_des_encrypt, des_key, sizeof(des_key) - 1U,
          CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
          CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
@@ -1006,9 +1025,9 @@ static void test_public_contract(void)
         {"DES/cbc-null-iv", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_CBC,
          NULL, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
          CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
-        {"DES/cbc-short-iv", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_CBC, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
-         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+        {"DES/cbc-short-iv", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_CBC,
+         zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE,
+         CRYPTO_STATUS_INVALID_LENGTH},
         {"DES/cbc-zero-iv-length", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CBC, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
          CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
@@ -1017,8 +1036,7 @@ static void test_public_contract(void)
          0U, CRYPTO_STATUS_OK},
         {"DES/cbc-same-buffer", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CBC, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
-         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
         {"DES/cbc-forward-overlap", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CBC, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, storage + 1U, CRYPTO_DES_BLOCK_SIZE,
@@ -1027,18 +1045,17 @@ static void test_public_contract(void)
          CRYPTO_CIPHER_MODE_CFB64, NULL, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
         {"DES/cfb64-short-iv", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_CFB64, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE,
-         output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+         CRYPTO_CIPHER_MODE_CFB64, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
         {"DES/cfb64-zero-iv-length", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_CFB64, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE,
-         output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+         CRYPTO_CIPHER_MODE_CFB64, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
         {"DES/cfb64-empty-input", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_CFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, 0U,
-         output, 0U, CRYPTO_STATUS_OK},
+         CRYPTO_CIPHER_MODE_CFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, 0U, output,
+         0U, CRYPTO_STATUS_OK},
         {"DES/cfb64-same-buffer", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
-         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
         {"DES/cfb64-forward-overlap", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, storage + 1U, CRYPTO_DES_BLOCK_SIZE,
@@ -1047,18 +1064,17 @@ static void test_public_contract(void)
          CRYPTO_CIPHER_MODE_OFB64, NULL, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
         {"DES/ofb64-short-iv", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_OFB64, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE,
-         output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+         CRYPTO_CIPHER_MODE_OFB64, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
         {"DES/ofb64-zero-iv-length", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_OFB64, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE,
-         output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+         CRYPTO_CIPHER_MODE_OFB64, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
         {"DES/ofb64-empty-input", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_OFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, 0U,
-         output, 0U, CRYPTO_STATUS_OK},
+         CRYPTO_CIPHER_MODE_OFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, 0U, output,
+         0U, CRYPTO_STATUS_OK},
         {"DES/ofb64-same-buffer", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_OFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
-         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
         {"DES/ofb64-forward-overlap", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_OFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, storage + 1U, CRYPTO_DES_BLOCK_SIZE,
@@ -1081,9 +1097,9 @@ static void test_public_contract(void)
         {"TDES/invalid-input-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE - 1U, output,
          CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
-        {"TDES/invalid-output-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
+        {"TDES/larger-output-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
-         (2U * CRYPTO_DES_BLOCK_SIZE), CRYPTO_STATUS_INVALID_LENGTH},
+         (2U * CRYPTO_DES_BLOCK_SIZE), CRYPTO_STATUS_OK},
         {"TDES/invalid-key-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key) - 1U,
          CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
          CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
@@ -1112,8 +1128,7 @@ static void test_public_contract(void)
          0U, CRYPTO_STATUS_OK},
         {"TDES/cbc-same-buffer", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_CBC, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
-         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
         {"TDES/cbc-forward-overlap", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_CBC, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, storage + 1U, CRYPTO_DES_BLOCK_SIZE,
@@ -1122,18 +1137,17 @@ static void test_public_contract(void)
          CRYPTO_CIPHER_MODE_CFB64, NULL, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
         {"TDES/cfb64-short-iv", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
-         CRYPTO_CIPHER_MODE_CFB64, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE,
-         output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+         CRYPTO_CIPHER_MODE_CFB64, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
         {"TDES/cfb64-zero-iv-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
-         CRYPTO_CIPHER_MODE_CFB64, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE,
-         output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+         CRYPTO_CIPHER_MODE_CFB64, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
         {"TDES/cfb64-empty-input", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
-         CRYPTO_CIPHER_MODE_CFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, 0U,
-         output, 0U, CRYPTO_STATUS_OK},
+         CRYPTO_CIPHER_MODE_CFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, 0U, output,
+         0U, CRYPTO_STATUS_OK},
         {"TDES/cfb64-same-buffer", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_CFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
-         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
         {"TDES/cfb64-forward-overlap", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_CFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, storage + 1U, CRYPTO_DES_BLOCK_SIZE,
@@ -1142,28 +1156,27 @@ static void test_public_contract(void)
          CRYPTO_CIPHER_MODE_OFB64, NULL, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
         {"TDES/ofb64-short-iv", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
-         CRYPTO_CIPHER_MODE_OFB64, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE,
-         output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+         CRYPTO_CIPHER_MODE_OFB64, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
         {"TDES/ofb64-zero-iv-length", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
-         CRYPTO_CIPHER_MODE_OFB64, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE,
-         output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+         CRYPTO_CIPHER_MODE_OFB64, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
         {"TDES/ofb64-empty-input", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
-         CRYPTO_CIPHER_MODE_OFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, 0U,
-         output, 0U, CRYPTO_STATUS_OK},
+         CRYPTO_CIPHER_MODE_OFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, 0U, output,
+         0U, CRYPTO_STATUS_OK},
         {"TDES/ofb64-same-buffer", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_OFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
-         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
         {"TDES/ofb64-forward-overlap", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_OFB64, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, storage + 1U, CRYPTO_DES_BLOCK_SIZE,
          CRYPTO_STATUS_OVERLAPPING_BUFFERS},
-        {"DES/ctr-null-iv", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_CTR, NULL, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
-        {"DES/ctr-short-iv", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_CTR, zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
-         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
+        {"DES/ctr-null-iv", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_CTR,
+         NULL, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
+        {"DES/ctr-short-iv", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_CTR,
+         zero_block, 1U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE,
+         CRYPTO_STATUS_INVALID_LENGTH},
         {"DES/ctr-zero-iv-length", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CTR, zero_block, 0U, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
          CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
@@ -1172,8 +1185,7 @@ static void test_public_contract(void)
          0U, CRYPTO_STATUS_OK},
         {"DES/ctr-same-buffer", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CTR, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
-         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
         {"DES/ctr-forward-overlap", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CTR, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, storage + 1U, CRYPTO_DES_BLOCK_SIZE,
@@ -1192,8 +1204,7 @@ static void test_public_contract(void)
          0U, CRYPTO_STATUS_OK},
         {"TDES/ctr-same-buffer", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_CTR, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE,
-         CRYPTO_STATUS_OVERLAPPING_BUFFERS},
+         CRYPTO_DES_BLOCK_SIZE, storage, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OVERLAPPING_BUFFERS},
         {"TDES/ctr-forward-overlap", crypto_tdes_encrypt, tdes2_key, sizeof(tdes2_key),
          CRYPTO_CIPHER_MODE_CTR, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
          CRYPTO_DES_BLOCK_SIZE, storage + 1U, CRYPTO_DES_BLOCK_SIZE,
@@ -1204,9 +1215,9 @@ static void test_public_contract(void)
         {"DES/nonce-in-cbc", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_CBC,
          zero_block, CRYPTO_DES_BLOCK_SIZE, zero_block, 1U, storage, CRYPTO_DES_BLOCK_SIZE, output,
          CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_INVALID_LENGTH},
-        {"DES/ctr-null-nonce", crypto_des_encrypt, des_key, sizeof(des_key),
-         CRYPTO_CIPHER_MODE_CTR, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage,
-         CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OK},
+        {"DES/ctr-null-nonce", crypto_des_encrypt, des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_CTR,
+         zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output,
+         CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_OK},
         {"DES/ctr-nonce-null-nonzero", crypto_des_encrypt, des_key, sizeof(des_key),
          CRYPTO_CIPHER_MODE_CTR, zero_block, CRYPTO_DES_BLOCK_SIZE, NULL, 1U, storage,
          CRYPTO_DES_BLOCK_SIZE, output, CRYPTO_DES_BLOCK_SIZE, CRYPTO_STATUS_NULL_ARGUMENT},
@@ -1242,13 +1253,68 @@ static void test_public_contract(void)
     {
         test_case = &cases[index];
         TEST_CASE(test_case->name);
+        size_t actual_length = test_case->output_length;
+
         status = test_case->operation(test_case->key, test_case->key_length, test_case->mode,
                                       test_case->iv, test_case->iv_length, test_case->nonce,
                                       test_case->nonce_length, test_case->input,
-                                      test_case->input_length, test_case->output,
-                                      test_case->output_length);
+                                      test_case->input_length, test_case->output, &actual_length);
         check_status(status, test_case->expected);
+        if (test_case->expected == CRYPTO_STATUS_OK)
+        {
+            TEST_CHECK(actual_length == test_case->input_length);
+        }
     }
+    return;
+}
+
+/** @brief Exercise the output-length in/out contract for DES and TDES. */
+static void test_output_length_contract(void)
+{
+    static const uint8_t storage[2U * CRYPTO_DES_BLOCK_SIZE] = {0};
+    uint8_t output[2U * CRYPTO_DES_BLOCK_SIZE] = {0};
+    size_t output_capacity;
+    crypto_status status;
+
+    TEST_CASE("DES/null-output-length");
+    status = crypto_des_encrypt(des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL,
+                                0U, storage, CRYPTO_DES_BLOCK_SIZE, output, NULL);
+    check_status(status, CRYPTO_STATUS_NULL_ARGUMENT);
+
+    TEST_CASE("TDES/null-output-length");
+    status = crypto_tdes_encrypt(tdes2_key, sizeof(tdes2_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U,
+                                 NULL, 0U, storage, CRYPTO_DES_BLOCK_SIZE, output, NULL);
+    check_status(status, CRYPTO_STATUS_NULL_ARGUMENT);
+
+    TEST_CASE("DES/undersized-output-length");
+    output_capacity = CRYPTO_DES_BLOCK_SIZE - 1U;
+    status = crypto_des_encrypt(des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL,
+                                0U, storage, CRYPTO_DES_BLOCK_SIZE, output, &output_capacity);
+    check_status(status, CRYPTO_STATUS_INVALID_LENGTH);
+    TEST_CHECK(output_capacity == CRYPTO_DES_BLOCK_SIZE - 1U);
+
+    TEST_CASE("TDES/undersized-output-length");
+    output_capacity = CRYPTO_DES_BLOCK_SIZE - 1U;
+    status =
+        crypto_tdes_encrypt(tdes2_key, sizeof(tdes2_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL,
+                            0U, storage, CRYPTO_DES_BLOCK_SIZE, output, &output_capacity);
+    check_status(status, CRYPTO_STATUS_INVALID_LENGTH);
+    TEST_CHECK(output_capacity == CRYPTO_DES_BLOCK_SIZE - 1U);
+
+    TEST_CASE("DES/oversized-output");
+    output_capacity = sizeof(output);
+    status = crypto_des_encrypt(des_key, sizeof(des_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL,
+                                0U, storage, CRYPTO_DES_BLOCK_SIZE, output, &output_capacity);
+    check_status(status, CRYPTO_STATUS_OK);
+    TEST_CHECK(output_capacity == CRYPTO_DES_BLOCK_SIZE);
+
+    TEST_CASE("TDES/oversized-output");
+    output_capacity = sizeof(output);
+    status =
+        crypto_tdes_encrypt(tdes2_key, sizeof(tdes2_key), CRYPTO_CIPHER_MODE_ECB, NULL, 0U, NULL,
+                            0U, storage, CRYPTO_DES_BLOCK_SIZE, output, &output_capacity);
+    check_status(status, CRYPTO_STATUS_OK);
+    TEST_CHECK(output_capacity == CRYPTO_DES_BLOCK_SIZE);
     return;
 }
 
@@ -1296,6 +1362,7 @@ TEST_LIST = {{"vectors/known-answer", test_known_answer_vectors},
              {"keys/degenerate-compatible", test_degenerate_tdes_keys},
              {"keys/validation", test_key_validation},
              {"api/contract", test_public_contract},
+             {"api/output-length", test_output_length_contract},
              {"status/strings", test_status_strings},
              {"version/generated", test_version},
              {NULL, NULL}};

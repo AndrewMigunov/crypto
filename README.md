@@ -44,6 +44,10 @@ building the project never downloads test dependencies.
 - Weak, semi-weak, and potentially weak DES components are rejected. Degenerate TDES bundles are
   accepted and behave as the equivalent lower keying option.
 - Input and output buffers must be distinct and must not overlap.
+- The `output_length` argument is an in/out value: on input it holds the capacity of the output
+  buffer in bytes, which may be larger than `input_length`; on success the library reports the
+  number of bytes actually written, which equals `input_length`. It is left unchanged when the
+  operation fails.
 - Bytes are interpreted in the bit order defined by the DES specification, independently of host
   endianness.
 - DES and TDES operations are one-shot calls. Key schedules remain private and are erased before
