@@ -91,37 +91,37 @@ if(TARGET cryptomoon_cli)
         PASS_REGULAR_EXPRESSION "0123456789abcdef"
     )
 
-    add_test(NAME cryptomoon.cli.2tdes.encrypt
-        COMMAND cryptomoon_cli encrypt --algorithm 2tdes
+    add_test(NAME cryptomoon.cli.tdes.2key.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm tdes
             --key 0123456789abcdef23456789abcdef01 --input fedcba9876543210
     )
-    set_tests_properties(cryptomoon.cli.2tdes.encrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.2key.encrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "b08ccaefcf225860"
     )
 
-    add_test(NAME cryptomoon.cli.2tdes.decrypt
-        COMMAND cryptomoon_cli decrypt --algorithm 2tdes
+    add_test(NAME cryptomoon.cli.tdes.2key.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm tdes
             --key 0123456789abcdef23456789abcdef01 --input b08ccaefcf225860
     )
-    set_tests_properties(cryptomoon.cli.2tdes.decrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.2key.decrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "fedcba9876543210"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.encrypt
-        COMMAND cryptomoon_cli encrypt --algorithm 3tdes
+    add_test(NAME cryptomoon.cli.tdes.3key.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm tdes
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --input fedcba9876543210
     )
-    set_tests_properties(cryptomoon.cli.3tdes.encrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.encrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "0737f6c53750d4a4"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.decrypt
-        COMMAND cryptomoon_cli decrypt --algorithm 3tdes
+    add_test(NAME cryptomoon.cli.tdes.3key.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm tdes
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --input 0737f6c53750d4a4
     )
-    set_tests_properties(cryptomoon.cli.3tdes.decrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.decrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "fedcba9876543210"
     )
 
@@ -146,11 +146,11 @@ if(TARGET cryptomoon_cli)
         PASS_REGULAR_EXPRESSION "85e813540f0ab405"
     )
 
-    add_test(NAME cryptomoon.cli.accept-degenerate-2tdes
-        COMMAND cryptomoon_cli encrypt --algorithm 2tdes
+    add_test(NAME cryptomoon.cli.accept-degenerate-tdes
+        COMMAND cryptomoon_cli encrypt --algorithm tdes
             --key 133457799bbcdff1123556789abcdef0 --input 0123456789abcdef
     )
-    set_tests_properties(cryptomoon.cli.accept-degenerate-2tdes PROPERTIES
+    set_tests_properties(cryptomoon.cli.accept-degenerate-tdes PROPERTIES
         PASS_REGULAR_EXPRESSION "85e813540f0ab405"
     )
 
@@ -172,23 +172,23 @@ if(TARGET cryptomoon_cli)
         PASS_REGULAR_EXPRESSION "4e6f77206973207468652074696d6520666f7220616c6c20"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.cbc.encrypt
-        COMMAND cryptomoon_cli encrypt --algorithm 3tdes --mode cbc
+    add_test(NAME cryptomoon.cli.tdes.3key.cbc.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm tdes --mode cbc
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --iv cafebabecafebabe
             --input fedcba9876543210fedcba9876543210fedcba9876543210
     )
-    set_tests_properties(cryptomoon.cli.3tdes.cbc.encrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.cbc.encrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "c2ea000c1690dadf2f11210bb3c1dc2c2ca3d89a53d496f1"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.cbc.decrypt
-        COMMAND cryptomoon_cli decrypt --algorithm 3tdes --mode cbc
+    add_test(NAME cryptomoon.cli.tdes.3key.cbc.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm tdes --mode cbc
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --iv cafebabecafebabe
             --input c2ea000c1690dadf2f11210bb3c1dc2c2ca3d89a53d496f1
     )
-    set_tests_properties(cryptomoon.cli.3tdes.cbc.decrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.cbc.decrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "fedcba9876543210fedcba9876543210fedcba9876543210"
     )
 
@@ -230,23 +230,23 @@ if(TARGET cryptomoon_cli)
         PASS_REGULAR_EXPRESSION "4e6f77206973207468652074696d6520666f7220616c6c20"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.cfb64.encrypt
-        COMMAND cryptomoon_cli encrypt --algorithm 3tdes --mode cfb64
+    add_test(NAME cryptomoon.cli.tdes.3key.cfb64.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm tdes --mode cfb64
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --iv cafebabecafebabe
             --input fedcba9876543210fedcba9876543210fedcba9876543210
     )
-    set_tests_properties(cryptomoon.cli.3tdes.cfb64.encrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.cfb64.encrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "431ed7d7f3751929b5a6f04f01f352d0ce2dcdff576e2990"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.cfb64.decrypt
-        COMMAND cryptomoon_cli decrypt --algorithm 3tdes --mode cfb64
+    add_test(NAME cryptomoon.cli.tdes.3key.cfb64.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm tdes --mode cfb64
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --iv cafebabecafebabe
             --input 431ed7d7f3751929b5a6f04f01f352d0ce2dcdff576e2990
     )
-    set_tests_properties(cryptomoon.cli.3tdes.cfb64.decrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.cfb64.decrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "fedcba9876543210fedcba9876543210fedcba9876543210"
     )
 
@@ -288,23 +288,23 @@ if(TARGET cryptomoon_cli)
         PASS_REGULAR_EXPRESSION "4e6f77206973207468652074696d6520666f7220616c6c20"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.ofb64.encrypt
-        COMMAND cryptomoon_cli encrypt --algorithm 3tdes --mode ofb64
+    add_test(NAME cryptomoon.cli.tdes.3key.ofb64.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm tdes --mode ofb64
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --iv cafebabecafebabe
             --input fedcba9876543210fedcba9876543210fedcba9876543210
     )
-    set_tests_properties(cryptomoon.cli.3tdes.ofb64.encrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.ofb64.encrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "431ed7d7f3751929df68b1320a873bb87ced02548fc30058"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.ofb64.decrypt
-        COMMAND cryptomoon_cli decrypt --algorithm 3tdes --mode ofb64
+    add_test(NAME cryptomoon.cli.tdes.3key.ofb64.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm tdes --mode ofb64
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --iv cafebabecafebabe
             --input 431ed7d7f3751929df68b1320a873bb87ced02548fc30058
     )
-    set_tests_properties(cryptomoon.cli.3tdes.ofb64.decrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.ofb64.decrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "fedcba9876543210fedcba9876543210fedcba9876543210"
     )
 
@@ -346,23 +346,23 @@ if(TARGET cryptomoon_cli)
         PASS_REGULAR_EXPRESSION "4e6f77206973207468652074696d6520666f7220616c6c20"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.ctr.encrypt
-        COMMAND cryptomoon_cli encrypt --algorithm 3tdes --mode ctr
+    add_test(NAME cryptomoon.cli.tdes.3key.ctr.encrypt
+        COMMAND cryptomoon_cli encrypt --algorithm tdes --mode ctr
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --iv cafebabecafebabe
             --input fedcba9876543210fedcba9876543210fedcba9876543210
     )
-    set_tests_properties(cryptomoon.cli.3tdes.ctr.encrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.ctr.encrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "431ed7d7f3751929e09853650c90bc1e4214753a4fa53ea1"
     )
 
-    add_test(NAME cryptomoon.cli.3tdes.ctr.decrypt
-        COMMAND cryptomoon_cli decrypt --algorithm 3tdes --mode ctr
+    add_test(NAME cryptomoon.cli.tdes.3key.ctr.decrypt
+        COMMAND cryptomoon_cli decrypt --algorithm tdes --mode ctr
             --key 0123456789abcdef23456789abcdef01456789abcdef0123
             --iv cafebabecafebabe
             --input 431ed7d7f3751929e09853650c90bc1e4214753a4fa53ea1
     )
-    set_tests_properties(cryptomoon.cli.3tdes.ctr.decrypt PROPERTIES
+    set_tests_properties(cryptomoon.cli.tdes.3key.ctr.decrypt PROPERTIES
         PASS_REGULAR_EXPRESSION "fedcba9876543210fedcba9876543210fedcba9876543210"
     )
 
@@ -442,4 +442,23 @@ if(TARGET cryptomoon_cli)
             --key 133457799bbcdff1 --iv 1234567890abcdef --input 0123456789abcdef
     )
     set_tests_properties(cryptomoon.cli.ecb-with-iv PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.reject-2tdes-spelling
+        COMMAND cryptomoon_cli encrypt --algorithm 2tdes
+            --key 0123456789abcdef23456789abcdef01 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.reject-2tdes-spelling PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.reject-3tdes-spelling
+        COMMAND cryptomoon_cli encrypt --algorithm 3tdes
+            --key 0123456789abcdef23456789abcdef01456789abcdef0123
+            --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.reject-3tdes-spelling PROPERTIES WILL_FAIL TRUE)
+
+    add_test(NAME cryptomoon.cli.tdes.reject-8-byte-key
+        COMMAND cryptomoon_cli encrypt --algorithm tdes
+            --key 133457799bbcdff1 --input 0123456789abcdef
+    )
+    set_tests_properties(cryptomoon.cli.tdes.reject-8-byte-key PROPERTIES WILL_FAIL TRUE)
 endif()

@@ -30,8 +30,7 @@ typedef enum cli_algorithm
 {
     CLI_ALGORITHM_NONE = 0,
     CLI_ALGORITHM_DES,
-    CLI_ALGORITHM_TDES2,
-    CLI_ALGORITHM_TDES3
+    CLI_ALGORITHM_TDES
 } cli_algorithm;
 
 /** @brief Supported cipher mode. */
@@ -97,7 +96,7 @@ static void cli_print_usage(FILE *stream)
                   "Usage:\n"
                   "  cryptomoon-cli --help\n"
                   "  cryptomoon-cli --version\n"
-                  "  cryptomoon-cli <encrypt|decrypt> --algorithm <des|2tdes|3tdes>\n"
+                  "  cryptomoon-cli <encrypt|decrypt> --algorithm <des|tdes>\n"
                   "      (--key <hex> | --key-file <path>)\n"
                   "      (--input <hex> | --file <path>) [--output <path>]\n"
                   "      [--mode <ecb|cbc|cfb64|ofb64|ctr>] [--iv <hex> | --iv-file <path>]\n"
@@ -108,6 +107,8 @@ static void cli_print_usage(FILE *stream)
                   "Input must contain complete 8-byte blocks; no padding is applied.\n"
                   "The default mode is ECB. CBC, CFB64, OFB64, and CTR require an 8-byte\n"
                   "initialization vector supplied with --iv or --iv-file.\n"
+                  "For --algorithm tdes, the key length selects the keying option: 16 bytes\n"
+                  "selects 2TDES (K1, K2, K1) and 24 bytes selects 3TDES (K1, K2, K3).\n"
                   "In CTR mode, --nonce (0-7 bytes) occupies the high bytes of the counter\n"
                   "block and is only valid with --mode ctr; --iv supplies the initial counter\n"
                   "value (the low bytes).\n"
@@ -154,13 +155,9 @@ static cli_algorithm cli_parse_algorithm(const char *text)
     {
         algorithm = CLI_ALGORITHM_DES;
     }
-    else if (strcmp(text, "2tdes") == 0)
+    else if (strcmp(text, "tdes") == 0)
     {
-        algorithm = CLI_ALGORITHM_TDES2;
-    }
-    else if (strcmp(text, "3tdes") == 0)
-    {
-        algorithm = CLI_ALGORITHM_TDES3;
+        algorithm = CLI_ALGORITHM_TDES;
     }
     return algorithm;
 }
@@ -332,22 +329,6 @@ static int cli_parse_arguments(int argc, char *argv[], cli_config *config)
     return result;
 }
 
-/** @brief Return the required encoded key size for an algorithm. */
-static size_t cli_key_size(cli_algorithm algorithm)
-{
-    size_t key_size = CRYPTO_DES_KEY_SIZE;
-
-    if (algorithm == CLI_ALGORITHM_TDES2)
-    {
-        key_size = CRYPTO_TDES2_KEY_SIZE;
-    }
-    else if (algorithm == CLI_ALGORITHM_TDES3)
-    {
-        key_size = CRYPTO_TDES3_KEY_SIZE;
-    }
-    return key_size;
-}
-
 /** @brief Decode one hexadecimal character. */
 static int cli_decode_nibble(char character, uint8_t *value)
 {
@@ -393,20 +374,38 @@ static int cli_decode_hex(const char *text, size_t byte_count, uint8_t *bytes)
     return result;
 }
 
-/** @brief Load a fixed-size key from hex or a raw key file. */
-static int cli_load_key(const cli_config *config, uint8_t *key, size_t key_size)
+/** @brief Load a key from hex or a raw key file, reporting its effective size. */
+static int cli_load_key(const cli_config *config, uint8_t *key, size_t *key_size)
 {
     int result = CLI_EXIT_OK;
 
     if (config->key_hex != NULL)
     {
-        if (strlen(config->key_hex) != (2U * key_size))
+        size_t text_length = strlen(config->key_hex);
+        size_t encoded_length;
+
+        if ((config->algorithm == CLI_ALGORITHM_DES) && (text_length == (2U * CRYPTO_DES_KEY_SIZE)))
+        {
+            encoded_length = CRYPTO_DES_KEY_SIZE;
+        }
+        else if ((config->algorithm == CLI_ALGORITHM_TDES) &&
+                 ((text_length == (2U * CRYPTO_TDES2_KEY_SIZE)) ||
+                  (text_length == (2U * CRYPTO_TDES3_KEY_SIZE))))
+        {
+            encoded_length = text_length / 2U;
+        }
+        else
+        {
+            encoded_length = 0U;
+        }
+        if (encoded_length == 0U)
         {
             result = CLI_EXIT_USAGE;
         }
         else
         {
-            result = cli_decode_hex(config->key_hex, key_size, key);
+            *key_size = encoded_length;
+            result = cli_decode_hex(config->key_hex, encoded_length, key);
         }
     }
     else
@@ -420,7 +419,7 @@ static int cli_load_key(const cli_config *config, uint8_t *key, size_t key_size)
         }
         else
         {
-            size_t bytes_read = fread(key, 1U, key_size, key_file);
+            size_t bytes_read = fread(key, 1U, *key_size, key_file);
             int extra_byte = fgetc(key_file);
 
             if (ferror(key_file) != 0)
@@ -429,7 +428,22 @@ static int cli_load_key(const cli_config *config, uint8_t *key, size_t key_size)
                               config->key_path);
                 result = CLI_EXIT_IO;
             }
-            else if ((bytes_read != key_size) || (extra_byte != EOF))
+            else if (((config->algorithm == CLI_ALGORITHM_DES) &&
+                      (bytes_read == CRYPTO_DES_KEY_SIZE)) ||
+                     ((config->algorithm == CLI_ALGORITHM_TDES) &&
+                      ((bytes_read == CRYPTO_TDES2_KEY_SIZE) ||
+                       (bytes_read == CRYPTO_TDES3_KEY_SIZE))))
+            {
+                if (extra_byte == EOF)
+                {
+                    *key_size = bytes_read;
+                }
+                else
+                {
+                    result = CLI_EXIT_USAGE;
+                }
+            }
+            else
             {
                 result = CLI_EXIT_USAGE;
             }
@@ -759,13 +773,13 @@ static int cli_execute(const cli_config *config)
 {
     uint8_t key[CRYPTO_TDES3_KEY_SIZE];
     uint8_t chain[CRYPTO_DES_BLOCK_SIZE];
-    size_t key_size = cli_key_size(config->algorithm);
+    size_t key_size = sizeof(key);
     FILE *output_file = NULL;
     int result;
 
     cli_secure_zero(key, sizeof(key));
     cli_secure_zero(chain, sizeof(chain));
-    result = cli_load_key(config, key, key_size);
+    result = cli_load_key(config, key, &key_size);
     if ((result == CLI_EXIT_OK) && (config->mode != CLI_MODE_ECB))
     {
         if (config->mode == CLI_MODE_CTR)

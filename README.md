@@ -78,7 +78,7 @@ cryptomoon-cli encrypt --algorithm des \
     --key 133457799bbcdff1 \
     --input 0123456789abcdef
 
-cryptomoon-cli decrypt --algorithm 3tdes \
+cryptomoon-cli decrypt --algorithm tdes \
     --key-file key.bin \
     --file encrypted.bin \
     --output plaintext.bin
@@ -114,6 +114,10 @@ The IV can be passed as 16 hexadecimal characters with `--iv` or as a raw 8-byte
 `--nonce` (0-7 bytes, as hexadecimal text) occupies the high bytes of the counter block; when
 supplied, `--iv` holds the low counter bytes and `--nonce` plus `--iv` must total 8 bytes. Passing
 `--nonce` in any mode other than CTR is an error.
+
+For `--algorithm tdes`, the key length selects the keying option: a 16-byte key is processed as
+2TDES (`K1, K2, K1`) and a 24-byte key is processed as 3TDES (`K1, K2, K3`). Other key sizes are
+rejected, and the historical spellings `2tdes` and `3tdes` are no longer accepted.
 
 Without `--output`, the result is printed as lowercase hexadecimal text. With `--output`, raw
 bytes are written to the selected file. File processing is streaming and does not load the whole
