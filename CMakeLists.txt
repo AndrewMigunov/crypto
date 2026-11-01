@@ -37,6 +37,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         ${CRYPTOMOON_GENERATED_INCLUDE_DIR}/version.h
         src
         README.md
+        README.ru.md
         ALL
         COMMENT "Generating cryptomoon API documentation"
     )
